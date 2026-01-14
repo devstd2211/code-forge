@@ -1,4 +1,6 @@
-> Status: early-stage / untested with real API calls (requires funded API keys).
+## 🚧 Work in Progress
+This CLI orchestrates three AI agents (Architect, Developer, Reviewer).
+Currently *untested with real API calls*. Requires funded API keys.
 
 # Code Forge — CLI that orchestrates multiple LLM agents (Architect, Developer, Reviewer) to build production-ready code.
 
