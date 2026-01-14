@@ -1,10 +1,10 @@
-![CodeForge Logo](public/logo.png)
-
 # CodeForge
 
 **AI-powered code analysis and development system using Claude LLM.**
 
 CodeForge is a command-line tool for code analysis and development using Large Language Models (LLM). It automates code reviews, architectural design, and component generation through an interactive workflow with roles: Architect, Developer, Reviewer.
+
+![CodeForge Logo](public/logo.png)
 
 ## ❓ What is LLM?
 
