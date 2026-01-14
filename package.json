@@ -1,0 +1,60 @@
+{
+  "name": "codeforge",
+  "version": "0.1.0",
+  "description": "Multi-model AI code analysis and development system. Automates code reviews, architectural design, and component generation using Claude, GPT, and DeepSeek.",
+  "main": "dist/index.js",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/devstd2211/code-forge.git"
+  },
+  "homepage": "https://github.com/devstd2211/code-forge",
+  "bugs": {
+    "url": "https://github.com/devstd2211/code-forge/issues"
+  },
+  "keywords": [
+    "ai",
+    "code-review",
+    "architecture",
+    "claude",
+    "llm",
+    "code-generation",
+    "typescript"
+  ],
+  "author": "",
+  "license": "MIT",
+  "bin": {
+    "codeforge": "./dist/cli/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc && node dist/cli/cli.js",
+    "cli": "tsx src/cli/cli.ts",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "type-check": "tsc --noEmit",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.20.0",
+    "chalk": "^5.3.0",
+    "commander": "^12.0.0",
+    "dotenv": "^16.3.1",
+    "openai": "^6.16.0",
+    "uuid": "^9.0.1"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.8",
+    "@types/node": "^20.10.0",
+    "@types/uuid": "^9.0.7",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.1",
+    "ts-node": "^10.9.1",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

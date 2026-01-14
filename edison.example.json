@@ -1,0 +1,50 @@
+{
+  "mode": "simple",
+  "roles": {
+    "model": "claude",
+    "modelType": "claude-sonnet-4-5",
+    "role": "architect",
+    "temperature": 0.7,
+    "maxTokens": 4096
+  },
+  "tools": {
+    "enabled": [
+      "read_file",
+      "write_file",
+      "test_runner",
+      "code_search"
+    ],
+    "securityRules": {
+      "allowedPaths": [
+        "./src",
+        "./tests",
+        "./"
+      ],
+      "forbiddenPaths": [
+        "/etc",
+        "/root",
+        "/sys",
+        "/proc",
+        "./.git",
+        "./node_modules"
+      ],
+      "maxFileSize": 10485760,
+      "timeoutMs": 30000
+    }
+  },
+  "apiKeys": {
+    "claude": "sk-ant-...",
+    "openai": "sk-...",
+    "deepseek": "sk-..."
+  },
+  "retryPolicy": {
+    "maxRetries": 3,
+    "backoffMs": 1000,
+    "maxBackoffMs": 30000,
+    "backoffMultiplier": 2
+  },
+  "logging": {
+    "level": "info",
+    "format": "text"
+  }
+}

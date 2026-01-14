@@ -1,0 +1,64 @@
+# Dependencies
+node_modules/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Build outputs
+dist/
+build/
+*.tsbuildinfo
+
+# IDE
+.vscode/
+.idea/
+.code/
+*.swp
+*.swo
+*~
+.DS_Store
+*.iml
+
+# Environment & Config (sensitive - contains API keys)
+.env
+.env.local
+.env.*.local
+edison.json
+edison.config.json
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# OS
+Thumbs.db
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Generated code & outputs
+generated/
+output/
+dist/
+*.component.ts
+
+# Tests
+coverage/
+.nyc_output/
+*.lcov
+
+# Local documentation (private)
+NOTES.md
+TODO.md
+DEV_NOTES.md
+INTERNAL_*.md
+*.private.md
+
+# Optional local files
+.local/
+local/
+*.local.json
