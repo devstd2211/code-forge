@@ -1,3 +1,5 @@
+![CodeForge Logo](public/logo.png)
+
 # CodeForge
 
 **AI-powered code analysis and development system using Claude LLM.**
