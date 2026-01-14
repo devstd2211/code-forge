@@ -1,6 +1,6 @@
-# CodeForge
+# Code Forge — CLI that orchestrates multiple LLM agents (Architect, Developer, Reviewer) to build production-ready code.
 
-**AI-powered code analysis and development system using Claude LLM.**
+**AI-powered code analysis and development system using Claude/OpenAI/Deep-seek LLM.**
 
 CodeForge is a command-line tool for code analysis and development using Large Language Models (LLM). It automates code reviews, architectural design, and component generation through an interactive workflow with roles: Architect, Developer, Reviewer.
 
@@ -8,7 +8,7 @@ CodeForge is a command-line tool for code analysis and development using Large L
 
 ## ❓ What is LLM?
 
-**LLM (Large Language Model)** - AI neural network models that understand and generate text. CodeForge uses **Claude** from Anthropic for:
+**LLM (Large Language Model)** - AI neural network models that understand and generate text. CodeForge uses **Claude/OpenAI/Deep-seek** for:
 - Code analysis and review
 - System architecture design
 - Automatic TypeScript code generation
@@ -74,16 +74,16 @@ npm run build
       "maxTokens": 2048
     },
     "developer": {
-      "model": "claude",
-      "modelType": "claude-haiku-3-5",
+      "model": "gpt",
+      "modelType": "gpt-4-turbo",
       "temperature": 0.7,
-      "maxTokens": 2048
+      "maxTokens": 4096
     },
     "reviewer": {
-      "model": "claude",
-      "modelType": "claude-haiku-3-5",
+      "model": "deepseek",
+      "modelType": "deepseek-chat",
       "temperature": 0.3,
-      "maxTokens": 1024
+      "maxTokens": 2048
     }
   },
   "tools": {
