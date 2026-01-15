@@ -212,8 +212,7 @@ export class WorkflowManager {
       }
     }
 
-    // Step 3: Workflow complete
-    console.log('\n┌─ STEP 3: WORKFLOW SUMMARY ─────────────────────────────────┐\n');
+    // Workflow complete
     this.state.currentStage = 'complete';
 
     return this.state;
