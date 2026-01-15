@@ -25,10 +25,10 @@ import type { ToolConfiguration } from '../src/types/index.js';
  * Main sample workflow function
  */
 async function runHelloWorldWorkflow() {
-  console.log('┌─────────────────────────────────────────────────────────┐');
-  console.log('│  CodeForge Workflow Sample: Hello World in Go           │');
-  console.log('│  Architect → Developer → Reviewer (with error fixing)   │');
-  console.log('└─────────────────────────────────────────────────────────┘\n');
+  console.log('───────────────────────────────────────────────────────────');
+  console.log('  CodeForge Workflow Sample: Hello World in Go');
+  console.log('  Architect → Developer → Reviewer (with error fixing)');
+  console.log('───────────────────────────────────────────────────────────\n');
 
   // ========== SETUP ==========
   console.log('Setting up mock models and agents...\n');
@@ -92,7 +92,7 @@ Target: Two-phase implementation
   const workflowState = await workflow.orchestrateWorkflow(requirements);
 
   // ========== STEP 3: TOKEN SUMMARY ==========
-  console.log('\n┌─ STEP 3: WORKFLOW SUMMARY ────────────────────────────────┐\n');
+  console.log('\n┌─ STEP 3: WORKFLOW SUMMARY ────────────────────────────────\n');
 
   const metrics = workflow.getTokenMetrics();
 
@@ -116,7 +116,7 @@ Target: Two-phase implementation
   console.log(`  Review:       ${metrics.byPhase.review.toLocaleString()} tokens`);
 
   // ========== STEP 4: SAVE JSON LOGS ==========
-  console.log('\n┌─ STEP 4: SAVING METRICS AND HISTORY ───────────────────────┐\n');
+  console.log('\n┌─ STEP 4: SAVING METRICS AND HISTORY ───────────────────────\n');
 
   // Save metrics
   const metricsLog = {
@@ -178,7 +178,7 @@ Target: Two-phase implementation
   console.log(`✓ Workflow history saved to ${historyPath}`);
 
   // ========== CONCLUSION ==========
-  console.log('\n┌─ WORKFLOW COMPLETION ─────────────────────────────────────┐\n');
+  console.log('\n┌─ WORKFLOW COMPLETION ─────────────────────────────────────\n');
 
   console.log('✅ Sample Workflow Complete!');
   console.log('\nDemonstrated Features:');

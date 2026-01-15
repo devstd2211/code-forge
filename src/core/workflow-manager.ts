@@ -168,13 +168,13 @@ export class WorkflowManager {
    *    d. Architect prepares next task or finishes
    */
   async orchestrateWorkflow(requirements: string): Promise<WorkflowState> {
-    console.log('┌─ STEP 1: ARCHITECTURE DESIGN ──────────────────────────────┐\n');
+    console.log('┌─ STEP 1: ARCHITECTURE DESIGN ──────────────────────────────\n');
 
     // Step 1: Architect designs system and creates tasks
     await this.startArchitecture(requirements);
     const tasks = this.getTasks();
 
-    console.log('\n┌─ STEP 2: TASK EXECUTION WITH FEEDBACK LOOPS ───────────────┐\n');
+    console.log('\n┌─ STEP 2: TASK EXECUTION WITH FEEDBACK LOOPS ───────────────\n');
 
     // Step 2: Architect orchestrates Dev-Review loop for each task
     for (let idx = 0; idx < tasks.length; idx++) {
