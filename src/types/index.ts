@@ -457,7 +457,6 @@ export interface Task {
 
   // Review feedback
   reviewHistory: ReviewFeedback[];
-  currentReview?: ReviewFeedback;
 
   // Token tracking per task
   tokenUsage: TaskTokenUsage;

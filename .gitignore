@@ -9,7 +9,7 @@ dist/
 build/
 *.tsbuildinfo
 
-# IDE
+# IDE & Tools
 .vscode/
 .idea/
 .code/
@@ -18,6 +18,9 @@ build/
 *~
 .DS_Store
 *.iml
+
+# Claude Code temporary files
+tmpclaude-*-cwd
 
 # Environment & Config (sensitive - contains API keys)
 .env

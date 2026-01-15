@@ -132,12 +132,14 @@ export async function developCommand(projectName: string, args: any): Promise<vo
         }
 
         // Show token usage for this task
-        outputFormatter.printTaskComplete(task, true, completedTask.currentReview?.issues);
+        const currentReview = completedTask.reviewHistory[completedTask.reviewHistory.length - 1];
+        outputFormatter.printTaskComplete(task, true, currentReview?.issues);
       } else {
         console.log(
           `✗ Task incomplete after ${completedTask.iterationCount} iterations`
         );
-        outputFormatter.printTaskComplete(task, false, completedTask.currentReview?.issues);
+        const currentReview = completedTask.reviewHistory[completedTask.reviewHistory.length - 1];
+        outputFormatter.printTaskComplete(task, false, currentReview?.issues);
         allApproved = false;
       }
     }
@@ -199,13 +201,16 @@ export async function developCommand(projectName: string, args: any): Promise<vo
           review: t.tokenUsage.review,
           total: t.tokenUsage.total
         },
-        review: t.currentReview
-          ? {
-              decision: t.currentReview.decision,
-              issueCount: t.currentReview.issues.length,
-              tokensUsed: t.currentReview.tokensUsed
-            }
-          : null
+        review: (() => {
+          const lastReview = t.reviewHistory[t.reviewHistory.length - 1];
+          return lastReview
+            ? {
+                decision: lastReview.decision,
+                issueCount: lastReview.issues.length,
+                tokensUsed: lastReview.tokensUsed
+              }
+            : null;
+        })()
       }))
     };
 

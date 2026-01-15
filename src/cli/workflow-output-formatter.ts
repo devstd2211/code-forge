@@ -58,6 +58,14 @@ export class WorkflowOutputFormatter {
   }
 
   /**
+   * Print iteration status.
+   */
+  printIterationStatus(iterationNum: number, phase: 'development' | 'review', approved: boolean): void {
+    const status = approved ? '✅ APPROVED' : '❌ REJECTED';
+    console.log(`\n  [Iteration ${iterationNum}] ${phase} → ${status}`);
+  }
+
+  /**
    * Print token usage summary.
    */
   printTokenSummary(metrics: WorkflowTokenMetrics): void {

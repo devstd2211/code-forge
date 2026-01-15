@@ -493,7 +493,6 @@ Format your response as a structured architecture specification.`;
 
       // Update task with review feedback
       task.reviewHistory.push(reviewResult.feedback);
-      task.currentReview = reviewResult.feedback;
       task.tokenUsage.review.push(reviewResult.tokensUsed);
 
       // Update token metrics
@@ -646,19 +645,20 @@ Format your response as a structured architecture specification.`;
   private async getUserApprovalInteractive(task: Task): Promise<boolean> {
     console.log('\n=== USER APPROVAL REQUIRED ===');
     console.log(`Task: ${task.componentName}`);
-    console.log(`Status: ${task.currentReview?.decision}`);
+    const currentReview = this.getCurrentReview(task);
+    console.log(`Status: ${currentReview?.decision}`);
     console.log(`Iterations: ${task.iterationCount + 1}`);
 
-    if (task.currentReview && task.currentReview.issues.length > 0) {
+    if (currentReview && currentReview.issues.length > 0) {
       console.log('\nReview Issues:');
-      task.currentReview.issues.forEach(issue => {
+      currentReview.issues.forEach(issue => {
         console.log(`  [${issue.severity}] ${issue.description}`);
       });
     }
 
     // For now, auto-approve if review approved
     // In real implementation, this would prompt the user
-    const approved = task.currentReview?.decision === 'approve';
+    const approved = currentReview?.decision === 'approve';
 
     if (approved) {
       console.log('\n✓ Approved and ready for commit');
@@ -678,11 +678,12 @@ Format your response as a structured architecture specification.`;
   private async notifyArchitectOfCompletion(task: Task): Promise<void> {
     console.log(`\n=== NOTIFYING ARCHITECT ===`);
 
+    const currentReview = this.getCurrentReview(task);
     const notification = `Task "${task.componentName}" has been completed.
 
 Status: ${task.status}
 Iterations: ${task.iterationCount + 1}
-Final Review: ${task.currentReview?.decision}
+Final Review: ${currentReview?.decision}
 Tokens Used: ${task.tokenUsage.total}
 
 Ready for next task...`;
@@ -745,6 +746,10 @@ Ready for next task...`;
   }
 
   // Private helpers
+
+  private getCurrentReview(task: Task): ReviewFeedback | undefined {
+    return task.reviewHistory[task.reviewHistory.length - 1];
+  }
 
   private parseArchitectureFromResponse(response: UnifiedResponse): ArchitectureSpec {
     // Parse architecture details from response
