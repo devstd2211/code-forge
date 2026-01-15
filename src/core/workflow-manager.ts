@@ -166,8 +166,11 @@ export class WorkflowManager {
    *    b. Developer-Reviewer feedback loop (iterate until approved)
    *    c. Architect receives approval, marks task completed
    *    d. Architect prepares next task or finishes
+   *
+   * @param requirements - System requirements for architecture
+   * @param skipCommit - Skip git commit (useful for demos/testing)
    */
-  async orchestrateWorkflow(requirements: string): Promise<WorkflowState> {
+  async orchestrateWorkflow(requirements: string, skipCommit: boolean = false): Promise<WorkflowState> {
     console.log('\n─ STEP 1: ARCHITECTURE DESIGN ──────────────────────────────\n');
 
     // Step 1: Architect designs system and creates tasks
@@ -201,10 +204,13 @@ export class WorkflowManager {
         // Architect notifies completion
         await this.architectApproveTask(approvedTask);
 
-        // Create git commit
-        await this.commitTask(approvedTask);
+        // Create git commit (unless skipped for demo/testing)
+        if (!skipCommit) {
+          await this.commitTask(approvedTask);
+        }
 
-        console.log(`\n  ✅ Task approved and committed by Architect\n`);
+        const commitStatus = skipCommit ? 'approved' : 'approved and committed';
+        console.log(`\n  ✅ Task ${commitStatus} by Architect\n`);
       } else {
         // Max iterations exceeded
         approvedTask.status = 'needs_revision';

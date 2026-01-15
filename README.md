@@ -181,6 +181,39 @@ npm run type-check    # Type checking
 
 ---
 
+## 📚 Samples & Examples
+
+### Hello World Go Workflow Sample
+
+Demonstrates the complete 3-agent orchestration workflow:
+
+```bash
+npx ts-node samples/hello-world-go-workflow.ts
+```
+
+This sample shows:
+- **Architect** designing system architecture with 2 components
+- **Developer** implementing components (with intentional errors in Core component)
+- **Reviewer** analyzing code and finding critical issues (division by zero)
+- **Developer** fixing issues based on reviewer feedback
+- **Reviewer** approving fixed code
+- **Token tracking** across all phases
+- **Cost estimation** using model-specific pricing
+- **JSON output** with metrics and workflow history
+
+**Output Files Generated:**
+- `metrics-hello-world.json` - Token usage and cost breakdown by agent and phase
+- `workflow-history-hello-world.json` - Complete workflow execution history with task details
+
+**Features Demonstrated:**
+- Error detection and feedback loop
+- Multi-iteration development with reviewer approval
+- Different component behaviors (Service approves on first try, Core requires fixing)
+- Aggregated metrics across all agents
+- Structured task execution with proper state management
+
+---
+
 ## 📝 Project Structure
 
 ```

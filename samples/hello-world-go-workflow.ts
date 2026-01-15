@@ -89,7 +89,8 @@ Target: Two-phase implementation
   console.log('\n');
 
   // Run full 3-agent workflow: Architect orchestrates Dev-Review loops
-  const workflowState = await workflow.orchestrateWorkflow(requirements);
+  // skipCommit=true: skip git commits for demo (tool executor not configured)
+  const workflowState = await workflow.orchestrateWorkflow(requirements, true);
 
   // ========== STEP 3: TOKEN SUMMARY ==========
   console.log('\n─ STEP 3: WORKFLOW SUMMARY ────────────────────────────────\n');
