@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * CLI Entry Point - Command-line interface for Edison.
+ * CLI Entry Point - Command-line interface for CodeForge.
  * Handles argument parsing and command routing.
  * Supports two main modes:
  * 1. review - Analyze existing code
@@ -73,8 +73,8 @@ program
   .description('Show usage examples')
   .action(() => {
     console.log(`
-📚 Edison CLI Examples
-======================
+📚 CodeForge CLI Examples
+=========================
 
 1. CODE REVIEW MODE (Analyze existing code)
 ──────────────────────────────────────────
@@ -146,7 +146,7 @@ program
 5. CONFIGURATION
 ──────────────────
 
-  Create edison.json:
+  Create config.json:
   {
     "mode": "advanced",
     "roles": {

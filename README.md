@@ -66,16 +66,47 @@ npm run build
 
 ## ⚙️ Configuration
 
-### File: `edison.json`
+CodeForge looks for `config.json` in these locations (priority order):
+1. Current directory: `./config.json`
+2. User home: `~/.codeforge/config.json`
+
+Example config files are provided:
+- `config.example.json` - Simple mode configuration
+- `config.advanced.example.json` - Advanced mode with all three models
+
+### Simple Mode: `config.json`
+```json
+{
+  "mode": "simple",
+  "roles": {
+    "model": "claude",
+    "modelType": "claude-sonnet-4-5",
+    "temperature": 0.7,
+    "maxTokens": 4096
+  },
+  "tools": {
+    "enabled": ["read_file", "write_file", "test_runner", "code_search"],
+    "securityRules": {
+      "allowedPaths": ["./src", "./tests", "./"],
+      "forbiddenPaths": ["./.git", "./node_modules"]
+    }
+  },
+  "apiKeys": {
+    "claude": "sk-ant-..."
+  }
+}
+```
+
+### Advanced Mode: `config.json`
 ```json
 {
   "mode": "advanced",
   "roles": {
     "architect": {
       "model": "claude",
-      "modelType": "claude-haiku-3-5",
+      "modelType": "claude-opus-4-1",
       "temperature": 0.5,
-      "maxTokens": 2048
+      "maxTokens": 4096
     },
     "developer": {
       "model": "gpt",
@@ -93,9 +124,14 @@ npm run build
   "tools": {
     "enabled": ["read_file", "write_file", "test_runner", "code_search"],
     "securityRules": {
-      "allowedPaths": ["./src", "./tests"],
+      "allowedPaths": ["./src", "./tests", "./"],
       "forbiddenPaths": ["./.git", "./node_modules"]
     }
+  },
+  "apiKeys": {
+    "claude": "sk-ant-...",
+    "openai": "sk-...",
+    "deepseek": "sk-..."
   }
 }
 ```
@@ -103,9 +139,13 @@ npm run build
 ### Environment Variables (.env)
 ```bash
 ANTHROPIC_API_KEY=sk-ant-...
+OPENAI_API_KEY=sk-...
+DEEPSEEK_API_KEY=sk-...
 LOG_LEVEL=info              # debug, info, warn, error
 EDISON_MODE=advanced         # simple, advanced
 ```
+
+**Note:** The config file in the root directory should not be committed to git. Use the example files (`config.example.json`, `config.advanced.example.json`) as templates.
 
 ---
 

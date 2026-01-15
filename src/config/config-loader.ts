@@ -9,7 +9,7 @@ import { DEFAULT_CONFIG, ADVANCED_MODE_DEFAULT } from './defaults.js';
  * Priority order (highest to lowest):
  * 1. CLI arguments
  * 2. Environment variables
- * 3. Config file (edison.json or ~/.edison-cli/config.json)
+ * 3. Config file (config.json or ~/.codeforge/config.json)
  * 4. Defaults
  */
 export class ConfigLoader {
@@ -51,9 +51,8 @@ export class ConfigLoader {
    */
   private findConfigFile(): string | null {
     const possiblePaths = [
-      path.join(process.cwd(), 'edison.json'),
-      path.join(process.cwd(), 'edison.config.json'),
-      path.join(process.env.HOME || process.env.USERPROFILE || '', '.edison-cli', 'config.json')
+      path.join(process.cwd(), 'config.json'),
+      path.join(process.env.HOME || process.env.USERPROFILE || '', '.codeforge', 'config.json')
     ];
 
     for (const filePath of possiblePaths) {

@@ -23,8 +23,8 @@ build/
 .env
 .env.local
 .env.*.local
-edison.json
-edison.config.json
+config.json
+!config.*.example.json
 
 # Logs
 logs/
