@@ -156,6 +156,117 @@ export class WorkflowManager {
   }
 
   /**
+   * Orchestrate full workflow: Architect designs, then orchestrates Dev-Review loops for each task.
+   * This is the main entry point for the 3-agent workflow.
+   *
+   * Flow:
+   * 1. Architect designs architecture and creates tasks
+   * 2. For each task:
+   *    a. Architect notifies Developer: start task
+   *    b. Developer-Reviewer feedback loop (iterate until approved)
+   *    c. Architect receives approval, marks task completed
+   *    d. Architect prepares next task or finishes
+   */
+  async orchestrateWorkflow(requirements: string): Promise<WorkflowState> {
+    console.log('┌─ STEP 1: ARCHITECTURE DESIGN ──────────────────────────────┐\n');
+
+    // Step 1: Architect designs system and creates tasks
+    await this.startArchitecture(requirements);
+    const tasks = this.getTasks();
+
+    console.log('\n┌─ STEP 2: TASK EXECUTION WITH FEEDBACK LOOPS ───────────────┐\n');
+
+    // Step 2: Architect orchestrates Dev-Review loop for each task
+    for (let idx = 0; idx < tasks.length; idx++) {
+      const task = tasks[idx];
+      const taskNumber = idx + 1;
+      const totalTasks = tasks.length;
+
+      console.log(`\n[${taskNumber}/${totalTasks}] Architect assigning: ${task.componentName}`);
+      console.log('─'.repeat(60));
+
+      // Architect notifies Developer to start
+      await this.architectAssignTask(task);
+
+      // Developer-Reviewer feedback loop
+      console.log(`\n  → Starting Dev-Review feedback loop...\n`);
+      const approvedTask = await this.devReviewFeedbackLoop(task);
+
+      // Check if approved
+      if (approvedTask.status === 'approved') {
+        // Mark as completed by Architect approval
+        approvedTask.status = 'completed';
+        approvedTask.completedAt = new Date().toISOString();
+
+        // Architect notifies completion
+        await this.architectApproveTask(approvedTask);
+
+        // Create git commit
+        await this.commitTask(approvedTask);
+
+        console.log(`\n  ✅ Task approved and committed by Architect\n`);
+      } else {
+        // Max iterations exceeded
+        approvedTask.status = 'needs_revision';
+        console.log(`\n  ❌ Task incomplete after ${approvedTask.iterationCount} iterations\n`);
+      }
+    }
+
+    // Step 3: Workflow complete
+    console.log('\n┌─ STEP 3: WORKFLOW SUMMARY ─────────────────────────────────┐\n');
+    this.state.currentStage = 'complete';
+
+    return this.state;
+  }
+
+  /**
+   * Architect assigns a task to Developer.
+   */
+  private async architectAssignTask(task: Task): Promise<void> {
+    // Create context for architect
+    this.contextManager.createContext(this.architectAgent.id, 'architect');
+    this.contextManager.setCurrentTask(this.architectAgent.id, task);
+
+    const message = `Starting task assignment: ${task.componentName}
+
+Description: ${task.description}
+
+Success Criteria: ${task.architectureContext.successCriteria.join(', ')}
+
+Developer: Please implement this component and be prepared for code review.`;
+
+    this.contextManager.addMessage(this.architectAgent.id, {
+      id: uuidv4(),
+      role: 'user',
+      content: message,
+      timestamp: new Date().toISOString()
+    });
+
+    // Note: We don't call agent.performAnalysis here - architect just sets context
+    // The actual work is done by Developer-Reviewer loop
+  }
+
+  /**
+   * Architect approves a completed task.
+   */
+  private async architectApproveTask(task: Task): Promise<void> {
+    const message = `Task "${task.componentName}" has been approved and is ready for deployment.
+Status: ${task.status}
+Iterations: ${task.iterationCount + 1}
+Tokens used: ${task.tokenUsage.total}`;
+
+    this.contextManager.addMessage(this.architectAgent.id, {
+      id: uuidv4(),
+      role: 'user',
+      content: message,
+      timestamp: new Date().toISOString()
+    });
+
+    // Clear architect context for next task
+    this.contextManager.clearContext(this.architectAgent.id);
+  }
+
+  /**
    * Start workflow: Get architecture specification from architect.
    */
   async startArchitecture(requirements: string): Promise<ArchitectureSpec> {
@@ -353,14 +464,16 @@ Format your response as a structured architecture specification.`;
   }
 
   /**
-   * Execute a task with Developer → Reviewer feedback loop.
+   * Run Developer → Reviewer feedback loop for a task (no approval/commit).
+   * This is the core Dev-Review cycle that iterates until code is approved.
+   * Returns task with status='approved' when ready, or 'needs_revision' if max iterations exceeded.
    */
-  async executeTaskWithReviewLoop(task: Task): Promise<Task> {
+  async devReviewFeedbackLoop(task: Task): Promise<Task> {
     let approved = false;
 
     while (!approved && task.iterationCount < task.maxIterations) {
       // PHASE 1: DEVELOPMENT
-      console.log(`\n[Iteration ${task.iterationCount + 1}] Developer implementing...`);
+      console.log(`\n  [Iteration ${task.iterationCount + 1}] Developer implementing...`);
       const devResult = await this.developTask(task);
 
       // Update task with implementation
@@ -375,7 +488,7 @@ Format your response as a structured architecture specification.`;
       this.contextManager.clearContext(this.developerAgent.id);
 
       // PHASE 2: REVIEW
-      console.log(`[Iteration ${task.iterationCount + 1}] Reviewer analyzing...`);
+      console.log(`  [Iteration ${task.iterationCount + 1}] Reviewer analyzing...`);
       const reviewResult = await this.reviewTask(task);
 
       // Update task with review feedback
@@ -393,7 +506,35 @@ Format your response as a structured architecture specification.`;
       if (reviewResult.feedback.decision === 'approve') {
         approved = true;
         task.status = 'approved';
+      } else {
+        task.status = 'needs_revision';
+        task.iterationCount++;
+        console.log(
+          `\n  → Developer fixing issues (Iteration ${task.iterationCount}/${task.maxIterations})\n`
+        );
+      }
+    }
 
+    return task;
+  }
+
+  /**
+   * Execute a task with Developer → Reviewer feedback loop.
+   * Includes user approval and git commit.
+   * @param task - Task to execute
+   * @param skipApprovalAndCommit - Skip user approval and git commit (useful for demos/testing)
+   */
+  async executeTaskWithReviewLoop(task: Task, skipApprovalAndCommit: boolean = false): Promise<Task> {
+    // Run Dev-Review feedback loop
+    task = await this.devReviewFeedbackLoop(task);
+
+    // If approved, handle completion
+    if (task.status === 'approved') {
+      if (skipApprovalAndCommit) {
+        // Skip user approval and commit - just mark as completed
+        task.status = 'completed';
+        task.completedAt = new Date().toISOString();
+      } else {
         // Get user approval (interactive)
         const userApproved = await this.getUserApprovalInteractive(task);
         if (userApproved) {
@@ -405,12 +546,6 @@ Format your response as a structured architecture specification.`;
           // Notify architect
           await this.notifyArchitectOfCompletion(task);
         }
-      } else {
-        task.status = 'needs_revision';
-        task.iterationCount++;
-        console.log(
-          `\n→ Returning to developer for revision (${task.iterationCount}/${task.maxIterations})\n`
-        );
       }
     }
 
@@ -660,10 +795,41 @@ Ready for next task...`;
   }
 
   /**
-   * Get token metrics.
+   * Get token metrics (with cost calculation).
    */
   getTokenMetrics(): WorkflowTokenMetrics {
+    // Calculate estimated costs based on model pricing
+    const architectCost = this.calculateCost(
+      this.tokenMetrics.byAgent.architect,
+      this.architectAgent.model?.getCapabilities().costPer1kTokens
+    );
+    const developerCost = this.calculateCost(
+      this.tokenMetrics.byAgent.developer,
+      this.developerAgent.model?.getCapabilities().costPer1kTokens
+    );
+    const reviewerCost = this.calculateCost(
+      this.tokenMetrics.byAgent.reviewer,
+      this.reviewerAgent.model?.getCapabilities().costPer1kTokens
+    );
+
+    this.tokenMetrics.estimatedCost = {
+      architect: architectCost,
+      developer: developerCost,
+      reviewer: reviewerCost,
+      total: architectCost + developerCost + reviewerCost
+    };
+
     return this.tokenMetrics;
+  }
+
+  /**
+   * Calculate cost for tokens based on model pricing.
+   */
+  private calculateCost(tokens: number, pricing?: { input: number; output: number }): number {
+    if (!pricing) return 0;
+    // Use average of input and output pricing per 1k tokens
+    const avgPrice = (pricing.input + pricing.output) / 2;
+    return (tokens / 1000) * avgPrice;
   }
 
   /**

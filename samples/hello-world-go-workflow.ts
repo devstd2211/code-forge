@@ -12,6 +12,7 @@
  * Run with: npx ts-node samples/hello-world-go-workflow.ts
  */
 
+import * as fs from 'fs';
 import { MockClaudeAdapter } from '../src/models/adapters/mock-claude-adapter.js';
 import { MockGPTAdapter } from '../src/models/adapters/mock-gpt-adapter.js';
 import { MockDeepSeekAdapter } from '../src/models/adapters/mock-deepseek-adapter.js';
@@ -72,9 +73,7 @@ async function runHelloWorldWorkflow() {
     toolExecutor
   );
 
-  // ========== STEP 1: ARCHITECTURE ==========
-  console.log('┌─ STEP 1: ARCHITECTURE DESIGN ──────────────────────────────┐\n');
-
+  // ========== ORCHESTRATE FULL WORKFLOW ==========
   const requirements = `Create a simple "Hello, World!" application in Go.
 The application should:
 1. Have a proper Go module structure
@@ -89,108 +88,8 @@ Target: Two-phase implementation
   console.log(requirements);
   console.log('\n');
 
-  const architecture = await workflow.startArchitecture(requirements);
-
-  console.log('Architect created architecture with components:');
-  architecture.componentBreakdown.forEach((comp, idx) => {
-    console.log(`  ${idx + 1}. ${comp.name} - ${comp.description}`);
-  });
-
-  // ========== STEP 2: TASK EXECUTION ==========
-  console.log('\n┌─ STEP 2: TASK EXECUTION WITH FEEDBACK LOOP ───────────────┐\n');
-
-  const tasks = workflow.getTasks();
-
-  // Process all tasks
-  for (let taskIdx = 0; taskIdx < tasks.length; taskIdx++) {
-    const task = tasks[taskIdx];
-    console.log(`\n>>> TASK ${taskIdx + 1}: ${task.componentName}`);
-    console.log('─'.repeat(60));
-
-    // Reset review and development state for this task
-    (reviewerModel as MockDeepSeekAdapter).resetReviewPass();
-    (developerModel as MockGPTAdapter).setIterationCount(0);
-
-    // ========== ITERATION 1 ==========
-    console.log('\n[PHASE 1] Developer Iteration 1 - Initial Implementation');
-    console.log('→ Developer writes code');
-
-    const devResult1 = await developerModel.analyze({
-      component: { name: task.componentName, sourcePath: 'main.go' },
-      context: { projectName: 'hello-world-go', componentCount: 2, totalLOC: 0, language: 'go' },
-      role: 'developer',
-      task: 'develop'
-    });
-
-    console.log(`\nDeveloper Response (first 300 chars):`);
-    console.log(devResult1.summary.substring(0, 300) + '...');
-    console.log(`✓ Tokens used: ${devResult1.metadata?.tokensUsed?.total || 0}`);
-
-    console.log('\n[PHASE 2] Reviewer Iteration 1 - First Review');
-    console.log('→ Reviewer analyzes code');
-
-    const reviewResult1 = await reviewerModel.analyze({
-      component: { name: task.componentName, sourcePath: 'main.go' },
-      context: { projectName: 'hello-world-go', componentCount: 2, totalLOC: 0, language: 'go' },
-      role: 'reviewer',
-      task: 'review'
-    });
-
-    // Check if there are critical issues
-    const hasCriticalIssues = reviewResult1.findings.some(f => f.severity === 'critical');
-
-    if (hasCriticalIssues) {
-      console.log(`\n🚨 CRITICAL ISSUES FOUND:`);
-      reviewResult1.findings.forEach(finding => {
-        if (finding.severity === 'critical') {
-          console.log(`   ⚠️  [${finding.severity.toUpperCase()}] ${finding.description}`);
-          console.log(`       Location: ${finding.location}`);
-          console.log(`       Fix: ${finding.suggestion}`);
-        }
-      });
-      console.log(`✓ Reviewer tokens used: ${reviewResult1.metadata?.tokensUsed?.total || 0}`);
-      console.log('\n❌ DECISION: REJECTED - Must fix critical issues');
-
-      // ========== ITERATION 2: FIX ==========
-      console.log('\n[PHASE 1] Developer Iteration 2 - Fixed Implementation');
-      console.log('→ Developer fixes the issues');
-
-      // Increment iteration count on developer
-      (developerModel as MockGPTAdapter).setIterationCount(1);
-
-      const devResult2 = await developerModel.analyze({
-        component: { name: task.componentName, sourcePath: 'main.go' },
-        context: { projectName: 'hello-world-go', componentCount: 2, totalLOC: 0, language: 'go' },
-        role: 'developer',
-        task: 'develop'
-      });
-
-      console.log(`\nDeveloper Response (fixed code):`);
-      console.log(devResult2.summary.substring(0, 300) + '...');
-      console.log(`✓ Tokens used: ${devResult2.metadata?.tokensUsed?.total || 0}`);
-
-      console.log('\n[PHASE 2] Reviewer Iteration 2 - Second Review');
-      console.log('→ Reviewer checks the fixed code');
-
-      // Set review pass to 1 to get approval response
-      (reviewerModel as MockDeepSeekAdapter).setReviewPass(1);
-
-      const reviewResult2 = await reviewerModel.analyze({
-        component: { name: task.componentName, sourcePath: 'main.go' },
-        context: { projectName: 'hello-world-go', componentCount: 2, totalLOC: 0, language: 'go' },
-        role: 'reviewer',
-        task: 'review'
-      });
-
-      console.log(`\n✅ APPROVED - Code meets quality standards`);
-      console.log(reviewResult2.summary.substring(0, 200) + '...');
-      console.log(`✓ Reviewer tokens used: ${reviewResult2.metadata?.tokensUsed?.total || 0}`);
-    } else {
-      console.log(`\n✅ APPROVED - Code meets quality standards`);
-      console.log(reviewResult1.summary.substring(0, 200) + '...');
-      console.log(`✓ Reviewer tokens used: ${reviewResult1.metadata?.tokensUsed?.total || 0}`);
-    }
-  }
+  // Run full 3-agent workflow: Architect orchestrates Dev-Review loops
+  const workflowState = await workflow.orchestrateWorkflow(requirements);
 
   // ========== STEP 3: TOKEN SUMMARY ==========
   console.log('\n┌─ STEP 3: WORKFLOW SUMMARY ────────────────────────────────┐\n');
@@ -199,8 +98,8 @@ Target: Two-phase implementation
 
   console.log('Token Usage Summary:');
   console.log(`  Architect:  ${metrics.byAgent.architect.toLocaleString()} tokens`);
-  console.log(`  Developer:  ${metrics.byAgent.developer.toLocaleString()} tokens (2 iterations)`);
-  console.log(`  Reviewer:   ${metrics.byAgent.reviewer.toLocaleString()} tokens (2 reviews)`);
+  console.log(`  Developer:  ${metrics.byAgent.developer.toLocaleString()} tokens`);
+  console.log(`  Reviewer:   ${metrics.byAgent.reviewer.toLocaleString()} tokens`);
   console.log(`  ───────────────────────`);
   console.log(`  Total:      ${metrics.byPhase.total.toLocaleString()} tokens`);
 
@@ -215,6 +114,68 @@ Target: Two-phase implementation
   console.log(`  Architecture: ${metrics.byPhase.architecture.toLocaleString()} tokens`);
   console.log(`  Development:  ${metrics.byPhase.development.toLocaleString()} tokens`);
   console.log(`  Review:       ${metrics.byPhase.review.toLocaleString()} tokens`);
+
+  // ========== STEP 4: SAVE JSON LOGS ==========
+  console.log('\n┌─ STEP 4: SAVING METRICS AND HISTORY ───────────────────────┐\n');
+
+  // Save metrics
+  const metricsLog = {
+    timestamp: new Date().toISOString(),
+    projectName: 'hello-world-go',
+    totalTokens: metrics.byPhase.total,
+    byAgent: metrics.byAgent,
+    byPhase: metrics.byPhase,
+    estimatedCost: metrics.estimatedCost,
+    tasks: workflow.getTasks().map(t => ({
+      id: t.id,
+      name: t.componentName,
+      status: t.status,
+      iterations: t.iterationCount + 1,
+      tokenUsage: t.tokenUsage
+    }))
+  };
+
+  const metricsPath = 'metrics-hello-world.json';
+  fs.writeFileSync(metricsPath, JSON.stringify(metricsLog, null, 2));
+  console.log(`✓ Metrics saved to ${metricsPath}`);
+
+  // Save workflow history
+  const workflowHistory = {
+    timestamp: new Date().toISOString(),
+    projectName: 'hello-world-go',
+    requirements,
+    workflow: {
+      totalTokens: metrics.byPhase.total,
+      totalCost: metrics.estimatedCost.total,
+      status: 'completed',
+      completedTasks: workflow.getTasks().filter(t => t.status === 'completed').length,
+      totalTasks: workflow.getTasks().length
+    },
+    tasks: workflow.getTasks().map(t => ({
+      id: t.id,
+      componentName: t.componentName,
+      status: t.status,
+      iterations: t.iterationCount + 1,
+      maxIterations: t.maxIterations,
+      tokenUsage: {
+        architecture: t.tokenUsage.architecture,
+        development: t.tokenUsage.development,
+        review: t.tokenUsage.review,
+        total: t.tokenUsage.total
+      },
+      review: t.currentReview
+        ? {
+            decision: t.currentReview.decision,
+            issueCount: t.currentReview.issues.length,
+            tokensUsed: t.currentReview.tokensUsed
+          }
+        : null
+    }))
+  };
+
+  const historyPath = 'workflow-history-hello-world.json';
+  fs.writeFileSync(historyPath, JSON.stringify(workflowHistory, null, 2));
+  console.log(`✓ Workflow history saved to ${historyPath}`);
 
   // ========== CONCLUSION ==========
   console.log('\n┌─ WORKFLOW COMPLETION ─────────────────────────────────────┐\n');

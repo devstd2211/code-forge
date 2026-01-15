@@ -10,7 +10,8 @@ export class MockGPTAdapter extends BaseModel {
   readonly name = 'gpt';
   readonly modelId = 'gpt-4-turbo';
 
-  private iterationCount = 0;
+  // Track iterations per component for feedback loop
+  private iterationCountPerComponent: Map<string, number> = new Map();
 
   constructor(_modelId?: string, _apiKey?: string) {
     super();
@@ -40,58 +41,64 @@ export class MockGPTAdapter extends BaseModel {
     const componentName = request.component?.name || 'component';
     const timestamp = new Date().toISOString();
 
-    if (role === 'developer' && task === 'develop' && this.iterationCount === 0) {
-      this.iterationCount++;
+    // Track iterations per component for feedback loop
+    // Note: task comes as 'analyze' not 'develop' due to RequestHandler transformation
+    if (role === 'developer' && (task === 'develop' || task === 'analyze')) {
+      const iterCount = this.iterationCountPerComponent.get(componentName) || 0;
 
-      return {
-        modelName: this.name,
-        role,
-        timestamp,
-        summary: `Implementation of ${componentName}\n\nGenerated Go code with main function.\nCode includes message definition and console output.`,
-        findings: [],
-        overallAssessment: 'pass',
-        confidence: 0.8,
-        findingCoverage: {
-          architecture: 0,
-          logic: 0,
-          performance: 0,
-          security: 0,
-          testCoverage: 0
-        },
-        metadata: {
-          tokensUsed: { input: 250, output: 450, total: 700 },
-          executionTimeMs: 150,
-          costEstimate: 0.021,
-          iterationCount: 1,
-          toolCalls: []
-        }
-      };
-    }
+      if (iterCount === 0) {
+        // First iteration: return code with intentional error (division by zero)
+        this.iterationCountPerComponent.set(componentName, iterCount + 1);
 
-    if (role === 'developer' && task === 'develop' && this.iterationCount >= 1) {
-      return {
-        modelName: this.name,
-        role,
-        timestamp,
-        summary: `Fixed Implementation of ${componentName}\n\nGenerated Go code with corrected logic.\nDivision by zero issue resolved.`,
-        findings: [],
-        overallAssessment: 'pass',
-        confidence: 0.95,
-        findingCoverage: {
-          architecture: 0,
-          logic: 0,
-          performance: 0,
-          security: 0,
-          testCoverage: 0
-        },
-        metadata: {
-          tokensUsed: { input: 300, output: 400, total: 700 },
-          executionTimeMs: 150,
-          costEstimate: 0.021,
-          iterationCount: 2,
-          toolCalls: []
-        }
-      };
+        return {
+          modelName: this.name,
+          role,
+          timestamp,
+          summary: `Implementation of ${componentName}\n\nGenerated Go code with main function.\nCode includes message definition and console output.`,
+          findings: [],
+          overallAssessment: 'pass',
+          confidence: 0.8,
+          findingCoverage: {
+            architecture: 0,
+            logic: 0,
+            performance: 0,
+            security: 0,
+            testCoverage: 0
+          },
+          metadata: {
+            tokensUsed: { input: 250, output: 450, total: 500 },
+            executionTimeMs: 150,
+            costEstimate: 0.0105,
+            iterationCount: 1,
+            toolCalls: []
+          }
+        };
+      } else {
+        // Second+ iteration: return fixed code
+        return {
+          modelName: this.name,
+          role,
+          timestamp,
+          summary: `Fixed Implementation of ${componentName}\n\nGenerated Go code with corrected logic.\nDivision by zero issue resolved.`,
+          findings: [],
+          overallAssessment: 'pass',
+          confidence: 0.95,
+          findingCoverage: {
+            architecture: 0,
+            logic: 0,
+            performance: 0,
+            security: 0,
+            testCoverage: 0
+          },
+          metadata: {
+            tokensUsed: { input: 300, output: 400, total: 500 },
+            executionTimeMs: 150,
+            costEstimate: 0.0105,
+            iterationCount: 2,
+            toolCalls: []
+          }
+        };
+      }
     }
 
     return {
@@ -119,7 +126,4 @@ export class MockGPTAdapter extends BaseModel {
     };
   }
 
-  setIterationCount(count: number): void {
-    this.iterationCount = count;
-  }
 }
