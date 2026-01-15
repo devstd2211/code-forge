@@ -505,8 +505,19 @@ Format your response as a structured architecture specification.`;
       if (reviewResult.feedback.decision === 'approve') {
         approved = true;
         task.status = 'approved';
+        console.log(`  ✅ APPROVED`);
       } else {
         task.status = 'needs_revision';
+
+        // Display issues found
+        console.log(`  ❌ REJECTED - Issues found:`);
+        reviewResult.feedback.issues.forEach(issue => {
+          console.log(`    [${issue.severity.toUpperCase()}] ${issue.description}`);
+          if (issue.suggestion) {
+            console.log(`      Fix: ${issue.suggestion}`);
+          }
+        });
+
         task.iterationCount++;
         console.log(
           `\n  → Developer fixing issues (Iteration ${task.iterationCount}/${task.maxIterations})\n`
