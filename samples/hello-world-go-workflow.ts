@@ -101,86 +101,96 @@ Target: Two-phase implementation
 
   const tasks = workflow.getTasks();
 
-  // Process first task
-  const task1 = tasks[0];
-  console.log(`\n>>> TASK 1: ${task1.componentName}`);
-  console.log('─'.repeat(60));
+  // Process all tasks
+  for (let taskIdx = 0; taskIdx < tasks.length; taskIdx++) {
+    const task = tasks[taskIdx];
+    console.log(`\n>>> TASK ${taskIdx + 1}: ${task.componentName}`);
+    console.log('─'.repeat(60));
 
-  console.log('\n[PHASE 1] Developer Iteration 1 - Initial Implementation');
-  console.log('→ Developer writes code with intentional error (division by zero)');
+    // Reset review and development state for this task
+    (reviewerModel as MockDeepSeekAdapter).resetReviewPass();
+    (developerModel as MockGPTAdapter).setIterationCount(0);
 
-  const devResult1 = await developerModel.analyze({
-    component: { name: task1.componentName, sourcePath: 'main.go' },
-    context: { projectName: 'hello-world-go', componentCount: 2, totalLOC: 0, language: 'go' },
-    role: 'developer',
-    task: 'develop'
-  });
+    // ========== ITERATION 1 ==========
+    console.log('\n[PHASE 1] Developer Iteration 1 - Initial Implementation');
+    console.log('→ Developer writes code');
 
-  console.log(`\nDeveloper Response (first 300 chars):`);
-  console.log(devResult1.summary.substring(0, 300) + '...');
-  console.log(`✓ Tokens used: ${devResult1.metadata?.tokensUsed?.total || 0}`);
+    const devResult1 = await developerModel.analyze({
+      component: { name: task.componentName, sourcePath: 'main.go' },
+      context: { projectName: 'hello-world-go', componentCount: 2, totalLOC: 0, language: 'go' },
+      role: 'developer',
+      task: 'develop'
+    });
 
-  console.log('\n[PHASE 2] Reviewer Iteration 1 - First Review');
-  console.log('→ Reviewer analyzes code');
+    console.log(`\nDeveloper Response (first 300 chars):`);
+    console.log(devResult1.summary.substring(0, 300) + '...');
+    console.log(`✓ Tokens used: ${devResult1.metadata?.tokensUsed?.total || 0}`);
 
-  // Reset DeepSeek review pass to get first review (with errors)
-  (reviewerModel as MockDeepSeekAdapter).resetReviewPass();
+    console.log('\n[PHASE 2] Reviewer Iteration 1 - First Review');
+    console.log('→ Reviewer analyzes code');
 
-  const reviewResult1 = await reviewerModel.analyze({
-    component: { name: task1.componentName, sourcePath: 'main.go' },
-    context: { projectName: 'hello-world-go', componentCount: 2, totalLOC: 0, language: 'go' },
-    role: 'reviewer',
-    task: 'review'
-  });
+    const reviewResult1 = await reviewerModel.analyze({
+      component: { name: task.componentName, sourcePath: 'main.go' },
+      context: { projectName: 'hello-world-go', componentCount: 2, totalLOC: 0, language: 'go' },
+      role: 'reviewer',
+      task: 'review'
+    });
 
-  console.log(`\n🚨 CRITICAL ISSUES FOUND:`);
-  reviewResult1.findings.forEach(finding => {
-    if (finding.severity === 'critical') {
-      console.log(`   ⚠️  [${finding.severity.toUpperCase()}] ${finding.description}`);
-      console.log(`       Location: ${finding.location}`);
-      console.log(`       Fix: ${finding.suggestion}`);
+    // Check if there are critical issues
+    const hasCriticalIssues = reviewResult1.findings.some(f => f.severity === 'critical');
+
+    if (hasCriticalIssues) {
+      console.log(`\n🚨 CRITICAL ISSUES FOUND:`);
+      reviewResult1.findings.forEach(finding => {
+        if (finding.severity === 'critical') {
+          console.log(`   ⚠️  [${finding.severity.toUpperCase()}] ${finding.description}`);
+          console.log(`       Location: ${finding.location}`);
+          console.log(`       Fix: ${finding.suggestion}`);
+        }
+      });
+      console.log(`✓ Reviewer tokens used: ${reviewResult1.metadata?.tokensUsed?.total || 0}`);
+      console.log('\n❌ DECISION: REJECTED - Must fix critical issues');
+
+      // ========== ITERATION 2: FIX ==========
+      console.log('\n[PHASE 1] Developer Iteration 2 - Fixed Implementation');
+      console.log('→ Developer fixes the issues');
+
+      // Increment iteration count on developer
+      (developerModel as MockGPTAdapter).setIterationCount(1);
+
+      const devResult2 = await developerModel.analyze({
+        component: { name: task.componentName, sourcePath: 'main.go' },
+        context: { projectName: 'hello-world-go', componentCount: 2, totalLOC: 0, language: 'go' },
+        role: 'developer',
+        task: 'develop'
+      });
+
+      console.log(`\nDeveloper Response (fixed code):`);
+      console.log(devResult2.summary.substring(0, 300) + '...');
+      console.log(`✓ Tokens used: ${devResult2.metadata?.tokensUsed?.total || 0}`);
+
+      console.log('\n[PHASE 2] Reviewer Iteration 2 - Second Review');
+      console.log('→ Reviewer checks the fixed code');
+
+      // Set review pass to 1 to get approval response
+      (reviewerModel as MockDeepSeekAdapter).setReviewPass(1);
+
+      const reviewResult2 = await reviewerModel.analyze({
+        component: { name: task.componentName, sourcePath: 'main.go' },
+        context: { projectName: 'hello-world-go', componentCount: 2, totalLOC: 0, language: 'go' },
+        role: 'reviewer',
+        task: 'review'
+      });
+
+      console.log(`\n✅ APPROVED - Code meets quality standards`);
+      console.log(reviewResult2.summary.substring(0, 200) + '...');
+      console.log(`✓ Reviewer tokens used: ${reviewResult2.metadata?.tokensUsed?.total || 0}`);
+    } else {
+      console.log(`\n✅ APPROVED - Code meets quality standards`);
+      console.log(reviewResult1.summary.substring(0, 200) + '...');
+      console.log(`✓ Reviewer tokens used: ${reviewResult1.metadata?.tokensUsed?.total || 0}`);
     }
-  });
-
-  console.log(`✓ Reviewer tokens used: ${reviewResult1.metadata?.tokensUsed?.total || 0}`);
-
-  // Decision: REJECT
-  console.log('\n❌ DECISION: REJECTED - Must fix critical issues');
-
-  // ========== ITERATION 2 ==========
-  console.log('\n[PHASE 1] Developer Iteration 2 - Fixed Implementation');
-  console.log('→ Developer fixes the division by zero error');
-
-  // Increment iteration count on developer
-  (developerModel as MockGPTAdapter).setIterationCount(1);
-
-  const devResult2 = await developerModel.analyze({
-    component: { name: task1.componentName, sourcePath: 'main.go' },
-    context: { projectName: 'hello-world-go', componentCount: 2, totalLOC: 0, language: 'go' },
-    role: 'developer',
-    task: 'develop'
-  });
-
-  console.log(`\nDeveloper Response (fixed code):`);
-  console.log(devResult2.summary.substring(0, 300) + '...');
-  console.log(`✓ Tokens used: ${devResult2.metadata?.tokensUsed?.total || 0}`);
-
-  console.log('\n[PHASE 2] Reviewer Iteration 2 - Second Review');
-  console.log('→ Reviewer checks the fixed code');
-
-  // Set review pass to 1 to get approval response
-  (reviewerModel as MockDeepSeekAdapter).setReviewPass(1);
-
-  const reviewResult2 = await reviewerModel.analyze({
-    component: { name: task1.componentName, sourcePath: 'main.go' },
-    context: { projectName: 'hello-world-go', componentCount: 2, totalLOC: 0, language: 'go' },
-    role: 'reviewer',
-    task: 'review'
-  });
-
-  console.log(`\n✅ APPROVED - Code meets quality standards`);
-  console.log(reviewResult2.summary.substring(0, 200) + '...');
-  console.log(`✓ Reviewer tokens used: ${reviewResult2.metadata?.tokensUsed?.total || 0}`);
+  }
 
   // ========== STEP 3: TOKEN SUMMARY ==========
   console.log('\n┌─ STEP 3: WORKFLOW SUMMARY ────────────────────────────────┐\n');
