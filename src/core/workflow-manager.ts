@@ -5,13 +5,16 @@
 
 import { v4 as uuidv4 } from 'uuid';
 import type {
-
   IAgent,
-
   AnalysisContext,
-
-  UnifiedResponse
+  UnifiedResponse,
+  Task,
+  ReviewFeedback,
+  WorkflowTokenMetrics,
+  InterfaceSpec
 } from '../types/index.js';
+import { AgentContextManager } from './context-manager.js';
+import type { ToolExecutor } from '../tools/executor.js';
 
 export type WorkflowStage = 'architecture' | 'development' | 'review' | 'approval' | 'complete';
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'needs-revision';
@@ -42,12 +45,6 @@ export interface ComponentPlan {
   interfaces: InterfaceSpec[];
   successCriteria: string[];
   estimatedComplexity: 'low' | 'medium' | 'high';
-}
-
-export interface InterfaceSpec {
-  name: string;
-  methods: MethodSpec[];
-  description: string;
 }
 
 export interface MethodSpec {
@@ -116,12 +113,19 @@ export class WorkflowManager {
   private reviewerAgent: IAgent;
   private conversationHistory: WorkflowMessage[];
 
+  // NEW: Context and token management
+  private contextManager: AgentContextManager;
+  private tokenMetrics: WorkflowTokenMetrics;
+  private tasks: Map<string, Task>;
+  private toolExecutor?: ToolExecutor;
+
   constructor(
     projectName: string,
     context: AnalysisContext,
     architectAgent: IAgent,
     developerAgent: IAgent,
-    reviewerAgent: IAgent
+    reviewerAgent: IAgent,
+    toolExecutor?: ToolExecutor
   ) {
     this.state = {
       projectId: uuidv4(),
@@ -138,6 +142,17 @@ export class WorkflowManager {
     this.developerAgent = developerAgent;
     this.reviewerAgent = reviewerAgent;
     this.conversationHistory = [];
+    this.toolExecutor = toolExecutor;
+
+    // NEW: Initialize context manager and token metrics
+    this.contextManager = new AgentContextManager();
+    this.tokenMetrics = {
+      byAgent: { architect: 0, developer: 0, reviewer: 0 },
+      byTask: new Map(),
+      byPhase: { architecture: 0, development: 0, review: 0, total: 0 },
+      estimatedCost: { architect: 0, developer: 0, reviewer: 0, total: 0 }
+    };
+    this.tasks = new Map();
   }
 
   /**
@@ -146,6 +161,9 @@ export class WorkflowManager {
   async startArchitecture(requirements: string): Promise<ArchitectureSpec> {
     console.log('\n=== ARCHITECT STAGE ===');
     console.log('Claude (Architect) is preparing system architecture...\n');
+
+    // Create isolated context for architect
+    this.contextManager.createContext(this.architectAgent.id, 'architect');
 
     // Message to architect
     const architectRequest = `
@@ -170,7 +188,7 @@ Format your response as a structured architecture specification.`;
       content: architectRequest
     });
 
-    // Simulate architect response (in real implementation, this would call Claude API)
+    // Get architect response
     const architectResponse = await this.architectAgent.performAnalysis({
       component: { name: 'system-architecture', sourcePath: 'architecture' },
       context: this.state.context,
@@ -183,6 +201,12 @@ Format your response as a structured architecture specification.`;
     this.state.architecture = architecture;
     this.state.components = architecture.componentBreakdown;
 
+    // Track tokens used in architecture phase
+    const tokensUsed = architectResponse.metadata?.tokensUsed?.total || 0;
+    this.tokenMetrics.byPhase.architecture += tokensUsed;
+    this.tokenMetrics.byPhase.total += tokensUsed;
+    this.tokenMetrics.byAgent.architect += tokensUsed;
+
     this.conversationHistory.push({
       from: 'architect',
       to: 'user',
@@ -192,227 +216,24 @@ Format your response as a structured architecture specification.`;
     });
 
     console.log('✓ Architecture prepared and accepted\n');
+    console.log(`Architect tokens used: ${tokensUsed}\n`);
     console.log('Components to develop:');
     architecture.componentBreakdown.forEach((comp, idx) => {
       console.log(`  ${idx + 1}. ${comp.name} - ${comp.description}`);
     });
 
+    // Create Task objects from architecture
+    const tasks = this.createTasksFromArchitecture(architecture);
+
+    // Clear architect context
+    this.contextManager.clearContext(this.architectAgent.id);
+
+    // Log tasks creation
+    console.log(`\n✓ Created ${tasks.length} tasks from architecture\n`);
+
     return architecture;
   }
 
-  /**
-   * Develop a single component with iterations.
-   */
-  async developComponent(componentIndex: number): Promise<DevelopmentIteration> {
-    if (componentIndex >= this.state.components.length) {
-      throw new Error('Invalid component index');
-    }
-
-    const component = this.state.components[componentIndex];
-    this.state.currentStage = 'development';
-    this.state.currentComponentIndex = componentIndex;
-
-    console.log(`\n=== DEVELOPMENT STAGE ===`);
-    console.log(`GPT (Developer) is implementing ${component.name}...\n`);
-
-    // Get or create iterations list for this component
-    if (!this.state.iterations.has(component.id)) {
-      this.state.iterations.set(component.id, []);
-    }
-
-    const iterations = this.state.iterations.get(component.id)!;
-    const iterationNumber = iterations.length + 1;
-
-    // Build development request
-    const devRequest = `
-Implement the following component:
-
-Component: ${component.name}
-Description: ${component.description}
-Complexity: ${component.estimatedComplexity}
-
-Dependencies: ${component.dependencies.join(', ')}
-
-Required interfaces:
-${component.interfaces
-  .map(
-    iface => `
-Interface: ${iface.name}
-${iface.methods.map(m => `  - ${m.name}(${m.parameters.map(p => `${p.name}: ${p.type}`).join(', ')}): ${m.returnType}`).join('\n')}
-`
-  )
-  .join('\n')}
-
-Success criteria:
-${component.successCriteria.map(c => `- ${c}`).join('\n')}
-
-Generate production-ready TypeScript code for this component.`;
-
-    this.conversationHistory.push({
-      from: 'user',
-      to: 'developer',
-      stage: 'development',
-      content: devRequest,
-      metadata: { component }
-    });
-
-    // Get development response
-    const devResponse = await this.developerAgent.performAnalysis({
-      component: { name: component.name, sourcePath: `src/components/${component.name}` },
-      context: this.state.context,
-      task: 'develop',
-      availableTools: []
-    });
-
-    // Extract code from response
-    const sourceCode = this.extractCodeFromResponse(devResponse);
-
-    const iteration: DevelopmentIteration = {
-      id: uuidv4(),
-      componentId: component.id,
-      componentName: component.name,
-      iterationNumber,
-      sourceCode,
-      generatedBy: 'developer',
-      timestamp: new Date().toISOString(),
-      description: `Iteration ${iterationNumber} of ${component.name}`,
-      status: 'pending'
-    };
-
-    iterations.push(iteration);
-
-    this.conversationHistory.push({
-      from: 'developer',
-      to: 'user',
-      stage: 'development',
-      content: devResponse.summary,
-      metadata: { iteration, sourceCode }
-    });
-
-    console.log(`✓ ${component.name} developed (Iteration ${iterationNumber})\n`);
-    console.log('Code preview (first 30 lines):');
-    console.log(sourceCode.split('\n').slice(0, 30).join('\n'));
-    console.log('...\n');
-
-    return iteration;
-  }
-
-  /**
-   * Review developed component.
-   */
-  async reviewComponent(iteration: DevelopmentIteration): Promise<ApprovalStatus> {
-    this.state.currentStage = 'review';
-
-    console.log(`\n=== REVIEW STAGE ===`);
-    console.log(`DeepSeek (Reviewer) is reviewing ${iteration.componentName}...\n`);
-
-    // Build review request
-    const reviewRequest = `
-Review this code for quality, security, and correctness:
-
-Component: ${iteration.componentName}
-Iteration: ${iteration.iterationNumber}
-
-Code:
-\`\`\`typescript
-${iteration.sourceCode}
-\`\`\`
-
-Evaluate:
-1. Code quality and readability
-2. Security issues
-3. Performance concerns
-4. Test coverage gaps
-5. SOLID principles adherence
-6. Error handling
-7. Documentation
-
-Provide specific feedback and recommendations.`;
-
-    this.conversationHistory.push({
-      from: 'user',
-      to: 'reviewer',
-      stage: 'review',
-      content: reviewRequest,
-      metadata: { iteration }
-    });
-
-    // Get review response
-    const reviewResponse = await this.reviewerAgent.performAnalysis({
-      component: {
-        name: iteration.componentName,
-        sourcePath: `src/components/${iteration.componentName}`
-      },
-      context: this.state.context,
-      task: 'review',
-      availableTools: []
-    });
-
-    // Determine approval status
-    const hasOnlyCriticalIssues = reviewResponse.findings.some(f => f.severity === 'critical');
-    const approval = hasOnlyCriticalIssues ? 'rejected' : 'approved';
-
-    iteration.status = approval;
-    iteration.reviewNotes = reviewResponse.summary;
-
-    if (approval === 'rejected') {
-      iteration.rejectionReason = reviewResponse.findings
-        .filter(f => f.severity === 'critical')
-        .map(f => `- ${f.description}`)
-        .join('\n');
-    }
-
-    this.conversationHistory.push({
-      from: 'reviewer',
-      to: 'user',
-      stage: 'review',
-      content: reviewResponse.summary,
-      metadata: {
-        iteration,
-        findings: reviewResponse.findings,
-        status: approval
-      }
-    });
-
-    return approval;
-  }
-
-  /**
-   * Get user approval for iteration.
-   */
-  async getUserApproval(iteration: DevelopmentIteration): Promise<boolean> {
-    this.state.currentStage = 'approval';
-
-    console.log(`\n=== APPROVAL STAGE ===`);
-    console.log(`Status: ${iteration.status}`);
-    console.log(`Notes: ${iteration.reviewNotes}\n`);
-
-    // In interactive mode, this would prompt the user
-    // For now, simulate approval based on review status
-    const approved = iteration.status === 'approved';
-
-    if (approved) {
-      console.log('✓ Approved and committed\n');
-
-      // Record approval
-      const approval: ApprovalRecord = {
-        iterationId: iteration.id,
-        componentId: iteration.componentId,
-        approvedAt: new Date().toISOString(),
-        approvedBy: 'reviewer',
-        status: 'approved',
-        notes: iteration.reviewNotes || ''
-      };
-
-      this.state.approvalHistory.push(approval);
-    } else {
-      console.log('✗ Rejected - needs revision\n');
-      console.log('Rejection reasons:');
-      console.log(iteration.rejectionReason);
-    }
-
-    return approved;
-  }
 
   /**
    * Get next component to develop.
@@ -495,6 +316,376 @@ Provide specific feedback and recommendations.`;
     return this.state;
   }
 
+  /**
+   * Create Task objects from architecture component breakdown.
+   */
+  createTasksFromArchitecture(architecture: ArchitectureSpec): Task[] {
+    return architecture.componentBreakdown.map((component, index) => {
+      const task: Task = {
+        id: uuidv4(),
+        componentId: component.id,
+        componentName: component.name,
+        description: component.description,
+        status: 'pending',
+        priority: index + 1,
+        architectureContext: {
+          requirements: architecture.requirements,
+          designPrinciples: architecture.designPrinciples,
+          interfaces: component.interfaces,
+          dependencies: component.dependencies,
+          successCriteria: component.successCriteria
+        },
+        reviewHistory: [],
+        tokenUsage: {
+          architecture: 0,
+          development: [],
+          review: [],
+          total: 0
+        },
+        iterationCount: 0,
+        maxIterations: 3,
+        createdAt: new Date().toISOString()
+      };
+
+      this.tasks.set(task.id, task);
+      return task;
+    });
+  }
+
+  /**
+   * Execute a task with Developer → Reviewer feedback loop.
+   */
+  async executeTaskWithReviewLoop(task: Task): Promise<Task> {
+    let approved = false;
+
+    while (!approved && task.iterationCount < task.maxIterations) {
+      // PHASE 1: DEVELOPMENT
+      console.log(`\n[Iteration ${task.iterationCount + 1}] Developer implementing...`);
+      const devResult = await this.developTask(task);
+
+      // Update task with implementation
+      task.implementation = devResult.implementation;
+      task.tokenUsage.development.push(devResult.tokensUsed);
+      task.startedAt = new Date().toISOString();
+
+      // Update token metrics
+      this.updateTokenMetrics(task, 'development', devResult.tokensUsed);
+
+      // Clear developer context
+      this.contextManager.clearContext(this.developerAgent.id);
+
+      // PHASE 2: REVIEW
+      console.log(`[Iteration ${task.iterationCount + 1}] Reviewer analyzing...`);
+      const reviewResult = await this.reviewTask(task);
+
+      // Update task with review feedback
+      task.reviewHistory.push(reviewResult.feedback);
+      task.currentReview = reviewResult.feedback;
+      task.tokenUsage.review.push(reviewResult.tokensUsed);
+
+      // Update token metrics
+      this.updateTokenMetrics(task, 'review', reviewResult.tokensUsed);
+
+      // Clear reviewer context
+      this.contextManager.clearContext(this.reviewerAgent.id);
+
+      // PHASE 3: DECISION
+      if (reviewResult.feedback.decision === 'approve') {
+        approved = true;
+        task.status = 'approved';
+
+        // Get user approval (interactive)
+        const userApproved = await this.getUserApprovalInteractive(task);
+        if (userApproved) {
+          // Create git commit
+          await this.commitTask(task);
+          task.status = 'completed';
+          task.completedAt = new Date().toISOString();
+
+          // Notify architect
+          await this.notifyArchitectOfCompletion(task);
+        }
+      } else {
+        task.status = 'needs_revision';
+        task.iterationCount++;
+        console.log(
+          `\n→ Returning to developer for revision (${task.iterationCount}/${task.maxIterations})\n`
+        );
+      }
+    }
+
+    return task;
+  }
+
+  /**
+   * Develop a task with context isolation.
+   */
+  private async developTask(
+    task: Task
+  ): Promise<{ implementation: any; tokensUsed: number }> {
+    // Create isolated context for developer
+    this.contextManager.createContext(this.developerAgent.id, 'developer');
+    this.contextManager.setCurrentTask(this.developerAgent.id, task);
+
+    // Call developer agent
+    const devResponse = await this.developerAgent.performAnalysis({
+      component: { name: task.componentName, sourcePath: `src/components/${task.componentName}` },
+      context: this.state.context,
+      task: 'develop',
+      availableTools: []
+    });
+
+    // Extract implementation
+    const sourceCode = this.extractCodeFromResponse(devResponse);
+    const tokensUsed = devResponse.metadata?.tokensUsed?.total || 0;
+
+    return {
+      implementation: {
+        sourceCode,
+        filesCreated: [`src/components/${task.componentName}.ts`],
+        timestamp: new Date().toISOString(),
+        developerNotes: devResponse.summary
+      },
+      tokensUsed
+    };
+  }
+
+  /**
+   * Review a task with comprehensive analysis.
+   */
+  private async reviewTask(task: Task): Promise<{ feedback: ReviewFeedback; tokensUsed: number }> {
+    // Create isolated context for reviewer
+    this.contextManager.createContext(this.reviewerAgent.id, 'reviewer');
+    this.contextManager.setCurrentTask(this.reviewerAgent.id, task);
+
+    // Call reviewer agent
+    const reviewResponse = await this.reviewerAgent.performAnalysis({
+      component: { name: task.componentName, sourcePath: `src/components/${task.componentName}` },
+      context: this.state.context,
+      task: 'review',
+      availableTools: []
+    });
+
+    const tokensUsed = reviewResponse.metadata?.tokensUsed?.total || 0;
+
+    // Determine decision
+    const hasCriticalIssues = reviewResponse.findings.some(f => f.severity === 'critical');
+    const decision = hasCriticalIssues ? 'reject' : 'approve';
+
+    // Convert findings to review issues
+    const issues = reviewResponse.findings.map(f => ({
+      type: (f.type || 'other') as any,
+      severity: f.severity,
+      description: f.description,
+      location: f.location,
+      suggestion: f.suggestion || 'No suggestion available'
+    }));
+
+    const feedback: ReviewFeedback = {
+      id: uuidv4(),
+      reviewerId: this.reviewerAgent.id,
+      timestamp: new Date().toISOString(),
+      decision,
+      issues,
+      summary: reviewResponse.summary,
+      tokensUsed
+    };
+
+    return { feedback, tokensUsed };
+  }
+
+  /**
+   * Get interactive user approval.
+   */
+  private async getUserApprovalInteractive(task: Task): Promise<boolean> {
+    console.log('\n=== USER APPROVAL REQUIRED ===');
+    console.log(`Task: ${task.componentName}`);
+    console.log(`Status: ${task.currentReview?.decision}`);
+    console.log(`Iterations: ${task.iterationCount + 1}`);
+
+    if (task.currentReview && task.currentReview.issues.length > 0) {
+      console.log('\nReview Issues:');
+      task.currentReview.issues.forEach(issue => {
+        console.log(`  [${issue.severity}] ${issue.description}`);
+      });
+    }
+
+    // For now, auto-approve if review approved
+    // In real implementation, this would prompt the user
+    const approved = task.currentReview?.decision === 'approve';
+
+    if (approved) {
+      console.log('\n✓ Approved and ready for commit');
+    } else {
+      console.log('\n✗ Not approved');
+    }
+
+    return approved;
+  }
+
+  /**
+   * Create git commit for approved task.
+   */
+  private async commitTask(task: Task): Promise<void> {
+    if (!task.implementation) {
+      console.log('✗ No implementation to commit');
+      return;
+    }
+
+    console.log(`\n=== COMMITTING TASK: ${task.componentName} ===`);
+
+    const commitMessage = `feat: Implement ${task.componentName}
+
+${task.description}
+
+Task ID: ${task.id}
+Iterations: ${task.iterationCount + 1}
+Status: ${task.status}
+Tokens Used: ${task.tokenUsage.total}
+
+Co-authored-by: CodeForge Workflow <workflow@codeforge.ai>`;
+
+    try {
+      if (this.toolExecutor) {
+        // Use git-commit tool
+        const result = await this.toolExecutor.executeTool('git_commit', {
+          message: commitMessage,
+          files: task.implementation.filesCreated
+        });
+
+        if (result.success) {
+          console.log('✓ Task committed to git');
+          if (result.data) {
+            try {
+              const data = JSON.parse(result.data);
+              console.log(`  Commit Hash: ${data.commitHash}`);
+              console.log(`  Files: ${data.filesCommitted}`);
+            } catch {
+              // Ignore parse errors
+            }
+          }
+        } else {
+          console.error('✗ Failed to commit:', result.error);
+        }
+      } else {
+        // Fallback: just log the commit details
+        console.log(`\nCommit message:\n${commitMessage}`);
+        console.log(`\nFiles to commit:\n${task.implementation.filesCreated.join('\n')}`);
+        console.log('✓ Task ready for commit (tool executor not available)');
+      }
+    } catch (error) {
+      console.error('✗ Failed to commit:', (error as Error).message);
+    }
+  }
+
+  /**
+   * Notify architect of task completion.
+   */
+  private async notifyArchitectOfCompletion(task: Task): Promise<void> {
+    console.log(`\n=== NOTIFYING ARCHITECT ===`);
+
+    const notification = `Task "${task.componentName}" has been completed.
+
+Status: ${task.status}
+Iterations: ${task.iterationCount + 1}
+Final Review: ${task.currentReview?.decision}
+Tokens Used: ${task.tokenUsage.total}
+
+Ready for next task...`;
+
+    // Create temporary context for architect
+    this.contextManager.createContext(this.architectAgent.id, 'architect');
+    this.contextManager.addMessage(this.architectAgent.id, {
+      id: uuidv4(),
+      role: 'user',
+      content: notification,
+      timestamp: new Date().toISOString()
+    });
+
+    console.log(notification);
+
+    // Clear context
+    this.contextManager.clearContext(this.architectAgent.id);
+  }
+
+  /**
+   * Update token metrics for a task.
+   */
+  private updateTokenMetrics(task: Task, phase: 'architecture' | 'development' | 'review', tokens: number): void {
+    // Update phase totals
+    this.tokenMetrics.byPhase[phase] += tokens;
+    this.tokenMetrics.byPhase.total += tokens;
+
+    // Update agent totals
+    const agentRole = this.getAgentRoleForPhase(phase);
+    this.tokenMetrics.byAgent[agentRole] += tokens;
+
+    // Update task metrics
+    const taskMetrics = this.tokenMetrics.byTask.get(task.id) || task.tokenUsage;
+
+    if (phase === 'architecture') {
+      taskMetrics.architecture += tokens;
+    } else if (phase === 'development') {
+      // Already added to development array
+    } else if (phase === 'review') {
+      // Already added to review array
+    }
+
+    taskMetrics.total =
+      taskMetrics.architecture +
+      taskMetrics.development.reduce((a, b) => a + b, 0) +
+      taskMetrics.review.reduce((a, b) => a + b, 0);
+
+    this.tokenMetrics.byTask.set(task.id, taskMetrics);
+  }
+
+  /**
+   * Clear an agent's context.
+   */
+  clearAgentContext(role: 'architect' | 'developer' | 'reviewer'): void {
+    let agent: IAgent;
+    switch (role) {
+      case 'architect':
+        agent = this.architectAgent;
+        break;
+      case 'developer':
+        agent = this.developerAgent;
+        break;
+      case 'reviewer':
+        agent = this.reviewerAgent;
+        break;
+    }
+    this.contextManager.clearContext(agent.id);
+    console.log(`✓ Context cleared for ${role}`);
+  }
+
+  /**
+   * Get token metrics.
+   */
+  getTokenMetrics(): WorkflowTokenMetrics {
+    return this.tokenMetrics;
+  }
+
+  /**
+   * Get all tasks.
+   */
+  getTasks(): Task[] {
+    return Array.from(this.tasks.values());
+  }
+
+  /**
+   * Get task by ID.
+   */
+  getTask(taskId: string): Task | undefined {
+    return this.tasks.get(taskId);
+  }
+
+  private getAgentRoleForPhase(phase: string): 'architect' | 'developer' | 'reviewer' {
+    if (phase === 'architecture') return 'architect';
+    if (phase === 'development') return 'developer';
+    return 'reviewer';
+  }
+
   // Private helpers
 
   private parseArchitectureFromResponse(response: UnifiedResponse): ArchitectureSpec {
@@ -513,14 +704,7 @@ Provide specific feedback and recommendations.`;
           interfaces: [
             {
               name: 'ICore',
-              methods: [
-                {
-                  name: 'initialize',
-                  parameters: [],
-                  returnType: 'Promise<void>',
-                  description: 'Initialize core'
-                }
-              ],
+              methods: ['initialize(): Promise<void>'],
               description: 'Core interface'
             }
           ],
@@ -535,14 +719,7 @@ Provide specific feedback and recommendations.`;
           interfaces: [
             {
               name: 'IService',
-              methods: [
-                {
-                  name: 'execute',
-                  parameters: [{ name: 'request', type: 'Request', description: 'Service request' }],
-                  returnType: 'Promise<Response>',
-                  description: 'Execute service'
-                }
-              ],
+              methods: ['execute(request: Request): Promise<Response>'],
               description: 'Service interface'
             }
           ],

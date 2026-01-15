@@ -87,7 +87,8 @@ export async function developCommand(projectName: string, args: any): Promise<vo
       },
       architectAgent,
       developerAgent,
-      reviewerAgent
+      reviewerAgent,
+      toolExecutor
     );
 
     // Get requirements from user/input
@@ -108,57 +109,101 @@ export async function developCommand(projectName: string, args: any): Promise<vo
     fs.writeFileSync(archPath, JSON.stringify(architecture, null, 2));
     console.log(`✓ Architecture saved to ${archPath}`);
 
-    // STEP 2: Component Development
-    console.log('\n┌─ STEP 2: COMPONENT DEVELOPMENT ────────────────────────┐');
-    const components = architecture.componentBreakdown;
-    let componentIndex = 0;
+    // STEP 2: Task Execution with Developer ↔ Reviewer Feedback Loop
+    console.log('\n┌─ STEP 2: TASK EXECUTION ───────────────────────────────┐');
+    const tasks = workflow.getTasks();
     let allApproved = true;
 
-    for (const component of components) {
-      console.log(`\n[${componentIndex + 1}/${components.length}] ${component.name}`);
-      console.log('─'.repeat(50));
+    for (const task of tasks) {
+      console.log(`\n[${task.priority}/${tasks.length}] ${task.componentName}`);
+      console.log('─'.repeat(60));
 
-      let approved = false;
-      let iterationCount = 0;
-      const maxIterations = 3;
+      // Execute task with review loop (Developer → Reviewer → Approval)
+      const completedTask = await workflow.executeTaskWithReviewLoop(task);
 
-      // Iterate until approved or max iterations
-      while (!approved && iterationCount < maxIterations) {
-        // DEVELOP
-        const iteration = await workflow.developComponent(componentIndex);
+      if (completedTask.status === 'completed') {
+        console.log(`✓ Task completed and committed`);
 
-        // REVIEW
-        // const reviewStatus = await workflow.reviewComponent(iteration);
-
-        // APPROVE
-        const userApproved = await workflow.getUserApproval(iteration);
-
-        if (userApproved) { // reviewStatus used in context
-          approved = true;
-
-          // Save approved iteration
+        // Save implementation code
+        if (completedTask.implementation) {
           const codePath = path.resolve(
             args.output || '.',
-            `${component.name}.component.ts`
+            `${completedTask.componentName}.component.ts`
           );
-          fs.writeFileSync(codePath, iteration.sourceCode);
+          fs.writeFileSync(codePath, completedTask.implementation.sourceCode);
           console.log(`✓ Component code saved to ${codePath}`);
-        } else {
-          iterationCount++;
-          if (iterationCount < maxIterations) {
-            console.log(`\n→ Returning to developer for revision (${iterationCount}/${maxIterations - 1})\n`);
-          } else {
-            console.log('\n✗ Max iterations reached. Component approval skipped.');
-            allApproved = false;
-          }
         }
-      }
 
-      componentIndex++;
+        // Show token usage for this task
+        console.log(`\nToken Usage for ${task.componentName}:`);
+        console.log(`  Architecture: ${completedTask.tokenUsage.architecture}`);
+        console.log(
+          `  Development: ${completedTask.tokenUsage.development.join(', ') || 'N/A'}`
+        );
+        console.log(`  Review: ${completedTask.tokenUsage.review.join(', ') || 'N/A'}`);
+        console.log(`  Total: ${completedTask.tokenUsage.total}`);
+      } else {
+        console.log(
+          `✗ Task incomplete after ${completedTask.iterationCount} iterations`
+        );
+        allApproved = false;
+      }
     }
 
-    // STEP 3: Generate Project Structure
-    console.log('\n┌─ STEP 3: PROJECT SUMMARY ──────────────────────────────┐');
+    // STEP 3: Token Usage Summary
+    console.log('\n┌─ STEP 3: TOKEN USAGE SUMMARY ──────────────────────────┐');
+    const metrics = workflow.getTokenMetrics();
+
+    console.log('\nTokens by Agent:');
+    console.log(`  Architect:  ${metrics.byAgent.architect.toLocaleString()} tokens`);
+    console.log(`  Developer:  ${metrics.byAgent.developer.toLocaleString()} tokens`);
+    console.log(`  Reviewer:   ${metrics.byAgent.reviewer.toLocaleString()} tokens`);
+    console.log(`  ───────────────────────────────`);
+    console.log(`  Total:      ${metrics.byPhase.total.toLocaleString()} tokens`);
+
+    console.log('\nTokens by Phase:');
+    console.log(`  Architecture: ${metrics.byPhase.architecture.toLocaleString()} tokens`);
+    console.log(`  Development:  ${metrics.byPhase.development.toLocaleString()} tokens`);
+    console.log(`  Review:       ${metrics.byPhase.review.toLocaleString()} tokens`);
+
+    console.log('\nEstimated Cost (USD):');
+    console.log(
+      `  Architect:  $${metrics.estimatedCost.architect.toFixed(4)}`
+    );
+    console.log(
+      `  Developer:  $${metrics.estimatedCost.developer.toFixed(4)}`
+    );
+    console.log(
+      `  Reviewer:   $${metrics.estimatedCost.reviewer.toFixed(4)}`
+    );
+    console.log(
+      `  ───────────────────────────────`
+    );
+    console.log(`  Total:      $${metrics.estimatedCost.total.toFixed(4)}`);
+
+    // Save metrics to JSON
+    const metricsLog = {
+      timestamp: new Date().toISOString(),
+      projectName,
+      totalTokens: metrics.byPhase.total,
+      byAgent: metrics.byAgent,
+      byPhase: metrics.byPhase,
+      estimatedCost: metrics.estimatedCost,
+      tasks: workflow.getTasks().map(t => ({
+        id: t.id,
+        name: t.componentName,
+        status: t.status,
+        iterations: t.iterationCount + 1,
+        tokenUsage: t.tokenUsage
+      }))
+    };
+
+    const metricsPath = path.resolve(args.output || '.', 'metrics.json');
+    fs.writeFileSync(metricsPath, JSON.stringify(metricsLog, null, 2));
+    console.log(`\n✓ Metrics saved to ${metricsPath}`);
+
+    // STEP 4: Generate Project Structure
+    console.log('\n┌─ STEP 4: PROJECT SUMMARY ──────────────────────────────┐');
     const projectStructure = workflow.generateProjectStructure();
     console.log(projectStructure);
 
@@ -167,6 +212,48 @@ export async function developCommand(projectName: string, args: any): Promise<vo
       fs.writeFileSync(structurePath, projectStructure);
       console.log(`\n✓ Project structure saved to ${structurePath}`);
     }
+
+    // Save workflow history
+    const workflowHistory = {
+      timestamp: new Date().toISOString(),
+      projectName,
+      requirements,
+      workflow: {
+        totalTokens: metrics.byPhase.total,
+        totalCost: metrics.estimatedCost.total,
+        status: allApproved ? 'completed' : 'partial',
+        completedTasks: workflow.getTasks().filter(t => t.status === 'completed').length,
+        totalTasks: workflow.getTasks().length
+      },
+      tasks: workflow.getTasks().map(t => ({
+        id: t.id,
+        componentName: t.componentName,
+        status: t.status,
+        iterations: t.iterationCount + 1,
+        maxIterations: t.maxIterations,
+        tokenUsage: {
+          architecture: t.tokenUsage.architecture,
+          development: t.tokenUsage.development,
+          review: t.tokenUsage.review,
+          total: t.tokenUsage.total
+        },
+        review: t.currentReview
+          ? {
+              decision: t.currentReview.decision,
+              issueCount: t.currentReview.issues.length,
+              tokensUsed: t.currentReview.tokensUsed
+            }
+          : null
+      }))
+    };
+
+    if (args.output) {
+      const historyPath = path.resolve(args.output, 'workflow-history.json');
+      fs.writeFileSync(historyPath, JSON.stringify(workflowHistory, null, 2));
+      console.log(`✓ Workflow history saved to ${historyPath}`);
+    }
+
+    console.log(`\n✓ Workflow ${allApproved ? 'completed' : 'completed with partial results'}`);
 
     // Final status
     console.log('\n╔════════════════════════════════════════════════════════════╗');

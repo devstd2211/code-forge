@@ -378,4 +378,157 @@ export interface AnalysisRequest {
   availableTools: string[];
 }
 
+// ===== TASK-BASED WORKFLOW TYPES =====
+
+export type TaskStatus =
+  | 'pending'           // Not started yet
+  | 'in_development'    // Developer working on it
+  | 'in_review'         // Reviewer analyzing
+  | 'needs_revision'    // Rejected, needs fixes
+  | 'approved'          // Approved by reviewer
+  | 'completed';        // Committed and done
+
+export type ReviewIssueType =
+  | 'memory_leak'
+  | 'algorithm'
+  | 'magic_number'
+  | 'constant'
+  | 'pattern'
+  | 'solid_violation'
+  | 'other';
+
+export interface ReviewIssue {
+  type: ReviewIssueType;
+  severity: Severity;
+  description: string;
+  location?: string;
+  suggestion: string;
+}
+
+export interface ReviewFeedback {
+  id: string;
+  reviewerId: string;
+  timestamp: string;
+  decision: 'approve' | 'reject';
+  issues: ReviewIssue[];
+  summary: string;
+  tokensUsed: number;
+}
+
+export interface TaskTokenUsage {
+  architecture: number;      // Tokens used in architecture phase for this task
+  development: number[];     // Array of token counts per dev iteration
+  review: number[];          // Array of token counts per review iteration
+  total: number;             // Sum of all above
+}
+
+export interface InterfaceSpec {
+  name: string;
+  methods: string[];
+  description?: string;
+}
+
+export interface TaskImplementation {
+  sourceCode: string;
+  filesCreated: string[];
+  timestamp: string;
+  developerNotes?: string;
+}
+
+export interface Task {
+  id: string;                          // UUID
+  componentId: string;                 // Reference to ComponentPlan
+  componentName: string;
+  description: string;
+  status: TaskStatus;
+  priority: number;                    // 1-5, for ordering
+
+  // Architecture context - passed from architect
+  architectureContext: {
+    requirements: string[];
+    designPrinciples: string[];
+    interfaces: InterfaceSpec[];
+    dependencies: string[];
+    successCriteria: string[];
+  };
+
+  // Development artifacts
+  implementation?: TaskImplementation;
+
+  // Review feedback
+  reviewHistory: ReviewFeedback[];
+  currentReview?: ReviewFeedback;
+
+  // Token tracking per task
+  tokenUsage: TaskTokenUsage;
+
+  // Iteration tracking
+  iterationCount: number;
+  maxIterations: number;
+
+  // Timestamps
+  createdAt: string;
+  startedAt?: string;
+  completedAt?: string;
+}
+
+// ===== AGENT CONTEXT TYPES =====
+
+export interface AgentMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: string;
+  tokensUsed?: number;
+}
+
+export interface AgentContext {
+  agentId: string;
+  role: AgentRole;
+  conversationHistory: AgentMessage[];
+  currentTask?: Task;
+  tokenUsage: number;
+  startedAt: string;
+  lastActivityAt: string;
+}
+
+export interface IAgentContextManager {
+  createContext(agentId: string, role: AgentRole): AgentContext;
+  getContext(agentId: string): AgentContext | undefined;
+  clearContext(agentId: string): void;
+  addMessage(agentId: string, message: AgentMessage): void;
+  getMessages(agentId: string): AgentMessage[];
+  setCurrentTask(agentId: string, task: Task): void;
+}
+
+// ===== TOKEN METRICS TYPES =====
+
+export interface WorkflowTokenMetrics {
+  // Per-agent totals
+  byAgent: {
+    architect: number;
+    developer: number;
+    reviewer: number;
+  };
+
+  // Per-task breakdown
+  byTask: Map<string, TaskTokenUsage>;  // taskId -> usage
+
+  // Per-phase totals
+  byPhase: {
+    architecture: number;
+    development: number;
+    review: number;
+    total: number;
+  };
+
+  // Cost estimates
+  estimatedCost: {
+    architect: number;
+    developer: number;
+    reviewer: number;
+    total: number;
+  };
+}
+
 // All types are already exported above

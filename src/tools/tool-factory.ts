@@ -9,6 +9,7 @@ import { FileWriter } from './implementations/file-writer.js';
 import { TestRunner } from './implementations/test-runner.js';
 import { CodeSearch } from './implementations/code-search.js';
 import { GitDiff } from './implementations/git-diff.js';
+import { GitCommit } from './implementations/git-commit.js';
 import { ComplexityAnalyzer } from './implementations/complexity-analyzer.js';
 import { ConfigError } from '../types/errors.js';
 
@@ -60,6 +61,9 @@ export class ToolFactory {
       case 'git_diff':
         return new GitDiff();
 
+      case 'git_commit':
+        return new GitCommit();
+
       case 'complexity_analyzer':
         return new ComplexityAnalyzer();
 
@@ -78,6 +82,7 @@ export class ToolFactory {
       'test_runner',
       'code_search',
       'git_diff',
+      'git_commit',
       'complexity_analyzer'
     ];
   }
