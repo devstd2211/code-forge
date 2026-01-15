@@ -15,6 +15,8 @@ import type {
 } from '../types/index.js';
 import { AgentContextManager } from './context-manager.js';
 import type { ToolExecutor } from '../tools/executor.js';
+import { WorkflowTokenTracker } from './workflow-token-tracker.js';
+import { WorkflowGitManager } from './workflow-git-manager.js';
 
 export type WorkflowStage = 'architecture' | 'development' | 'review' | 'approval' | 'complete';
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'needs-revision';
@@ -115,9 +117,9 @@ export class WorkflowManager {
 
   // NEW: Context and token management
   private contextManager: AgentContextManager;
-  private tokenMetrics: WorkflowTokenMetrics;
+  private tokenTracker: WorkflowTokenTracker;
+  private gitManager: WorkflowGitManager;
   private tasks: Map<string, Task>;
-  private toolExecutor?: ToolExecutor;
 
   constructor(
     projectName: string,
@@ -142,16 +144,11 @@ export class WorkflowManager {
     this.developerAgent = developerAgent;
     this.reviewerAgent = reviewerAgent;
     this.conversationHistory = [];
-    this.toolExecutor = toolExecutor;
 
-    // NEW: Initialize context manager and token metrics
+    // NEW: Initialize context manager, token tracker, and git manager
     this.contextManager = new AgentContextManager();
-    this.tokenMetrics = {
-      byAgent: { architect: 0, developer: 0, reviewer: 0 },
-      byTask: new Map(),
-      byPhase: { architecture: 0, development: 0, review: 0, total: 0 },
-      estimatedCost: { architect: 0, developer: 0, reviewer: 0, total: 0 }
-    };
+    this.tokenTracker = new WorkflowTokenTracker(architectAgent, developerAgent, reviewerAgent);
+    this.gitManager = new WorkflowGitManager(toolExecutor);
     this.tasks = new Map();
   }
 
@@ -206,7 +203,7 @@ export class WorkflowManager {
 
         // Create git commit (unless skipped for demo/testing)
         if (!skipCommit) {
-          await this.commitTask(approvedTask);
+          await this.gitManager.commitTask(approvedTask);
         }
 
         const commitStatus = skipCommit ? 'approved' : 'approved and committed';
@@ -319,9 +316,7 @@ Format your response as a structured architecture specification.`;
 
     // Track tokens used in architecture phase
     const tokensUsed = architectResponse.metadata?.tokensUsed?.total || 0;
-    this.tokenMetrics.byPhase.architecture += tokensUsed;
-    this.tokenMetrics.byPhase.total += tokensUsed;
-    this.tokenMetrics.byAgent.architect += tokensUsed;
+    this.tokenTracker.recordArchitecture('architect', tokensUsed);
 
     this.conversationHistory.push({
       from: 'architect',
@@ -487,7 +482,7 @@ Format your response as a structured architecture specification.`;
       task.startedAt = new Date().toISOString();
 
       // Update token metrics
-      this.updateTokenMetrics(task, 'development', devResult.tokensUsed);
+      this.tokenTracker.recordDevelopment(task, 'developer', devResult.tokensUsed);
 
       // Clear developer context
       this.contextManager.clearContext(this.developerAgent.id);
@@ -502,7 +497,7 @@ Format your response as a structured architecture specification.`;
       task.tokenUsage.review.push(reviewResult.tokensUsed);
 
       // Update token metrics
-      this.updateTokenMetrics(task, 'review', reviewResult.tokensUsed);
+      this.tokenTracker.recordReview(task, 'reviewer', reviewResult.tokensUsed);
 
       // Clear reviewer context
       this.contextManager.clearContext(this.reviewerAgent.id);
@@ -555,7 +550,7 @@ Format your response as a structured architecture specification.`;
         const userApproved = await this.getUserApprovalInteractive(task);
         if (userApproved) {
           // Create git commit
-          await this.commitTask(task);
+          await this.gitManager.commitTask(task);
           task.status = 'completed';
           task.completedAt = new Date().toISOString();
 
@@ -677,58 +672,6 @@ Format your response as a structured architecture specification.`;
   /**
    * Create git commit for approved task.
    */
-  private async commitTask(task: Task): Promise<void> {
-    if (!task.implementation) {
-      console.log('✗ No implementation to commit');
-      return;
-    }
-
-    console.log(`\n=== COMMITTING TASK: ${task.componentName} ===`);
-
-    const commitMessage = `feat: Implement ${task.componentName}
-
-${task.description}
-
-Task ID: ${task.id}
-Iterations: ${task.iterationCount + 1}
-Status: ${task.status}
-Tokens Used: ${task.tokenUsage.total}
-
-Co-authored-by: CodeForge Workflow <workflow@codeforge.ai>`;
-
-    try {
-      if (this.toolExecutor) {
-        // Use git-commit tool
-        const result = await this.toolExecutor.executeTool('git_commit', {
-          message: commitMessage,
-          files: task.implementation.filesCreated
-        });
-
-        if (result.success) {
-          console.log('✓ Task committed to git');
-          if (result.data) {
-            try {
-              const data = JSON.parse(result.data);
-              console.log(`  Commit Hash: ${data.commitHash}`);
-              console.log(`  Files: ${data.filesCommitted}`);
-            } catch {
-              // Ignore parse errors
-            }
-          }
-        } else {
-          console.error('✗ Failed to commit:', result.error);
-        }
-      } else {
-        // Fallback: just log the commit details
-        console.log(`\nCommit message:\n${commitMessage}`);
-        console.log(`\nFiles to commit:\n${task.implementation.filesCreated.join('\n')}`);
-        console.log('✓ Task ready for commit (tool executor not available)');
-      }
-    } catch (error) {
-      console.error('✗ Failed to commit:', (error as Error).message);
-    }
-  }
-
   /**
    * Notify architect of task completion.
    */
@@ -759,36 +702,6 @@ Ready for next task...`;
     this.contextManager.clearContext(this.architectAgent.id);
   }
 
-  /**
-   * Update token metrics for a task.
-   */
-  private updateTokenMetrics(task: Task, phase: 'architecture' | 'development' | 'review', tokens: number): void {
-    // Update phase totals
-    this.tokenMetrics.byPhase[phase] += tokens;
-    this.tokenMetrics.byPhase.total += tokens;
-
-    // Update agent totals
-    const agentRole = this.getAgentRoleForPhase(phase);
-    this.tokenMetrics.byAgent[agentRole] += tokens;
-
-    // Update task metrics
-    const taskMetrics = this.tokenMetrics.byTask.get(task.id) || task.tokenUsage;
-
-    if (phase === 'architecture') {
-      taskMetrics.architecture += tokens;
-    } else if (phase === 'development') {
-      // Already added to development array
-    } else if (phase === 'review') {
-      // Already added to review array
-    }
-
-    taskMetrics.total =
-      taskMetrics.architecture +
-      taskMetrics.development.reduce((a, b) => a + b, 0) +
-      taskMetrics.review.reduce((a, b) => a + b, 0);
-
-    this.tokenMetrics.byTask.set(task.id, taskMetrics);
-  }
 
   /**
    * Clear an agent's context.
@@ -811,41 +724,10 @@ Ready for next task...`;
   }
 
   /**
-   * Get token metrics (with cost calculation).
+   * Get token metrics (delegation to WorkflowTokenTracker).
    */
   getTokenMetrics(): WorkflowTokenMetrics {
-    // Calculate estimated costs based on model pricing
-    const architectCost = this.calculateCost(
-      this.tokenMetrics.byAgent.architect,
-      this.architectAgent.model?.getCapabilities().costPer1kTokens
-    );
-    const developerCost = this.calculateCost(
-      this.tokenMetrics.byAgent.developer,
-      this.developerAgent.model?.getCapabilities().costPer1kTokens
-    );
-    const reviewerCost = this.calculateCost(
-      this.tokenMetrics.byAgent.reviewer,
-      this.reviewerAgent.model?.getCapabilities().costPer1kTokens
-    );
-
-    this.tokenMetrics.estimatedCost = {
-      architect: architectCost,
-      developer: developerCost,
-      reviewer: reviewerCost,
-      total: architectCost + developerCost + reviewerCost
-    };
-
-    return this.tokenMetrics;
-  }
-
-  /**
-   * Calculate cost for tokens based on model pricing.
-   */
-  private calculateCost(tokens: number, pricing?: { input: number; output: number }): number {
-    if (!pricing) return 0;
-    // Use average of input and output pricing per 1k tokens
-    const avgPrice = (pricing.input + pricing.output) / 2;
-    return (tokens / 1000) * avgPrice;
+    return this.tokenTracker.getMetrics();
   }
 
   /**
@@ -860,12 +742,6 @@ Ready for next task...`;
    */
   getTask(taskId: string): Task | undefined {
     return this.tasks.get(taskId);
-  }
-
-  private getAgentRoleForPhase(phase: string): 'architect' | 'developer' | 'reviewer' {
-    if (phase === 'architecture') return 'architect';
-    if (phase === 'development') return 'developer';
-    return 'reviewer';
   }
 
   // Private helpers

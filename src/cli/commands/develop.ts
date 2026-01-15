@@ -3,7 +3,6 @@
  * Implements the architect → developer → reviewer → approve cycle.
  */
 
-import * as fs from 'fs';
 import * as path from 'path';
 import type { ReviewCommandArgs, AdvancedModeConfig } from '../../types/index.js';
 import { loadConfig } from '../../config/config-loader.js';
@@ -12,16 +11,16 @@ import { ToolFactory } from '../../tools/tool-factory.js';
 import { ToolExecutor } from '../../tools/executor.js';
 import { AgentFactory } from '../../agents/agent-factory.js';
 import { WorkflowManager } from '../../core/workflow-manager.js';
+import { WorkflowOutputFormatter } from '../workflow-output-formatter.js';
 
 /**
  * Execute the develop command - interactive workflow.
  */
 export async function developCommand(projectName: string, args: any): Promise<void> {
   try {
-    console.log('\n╔════════════════════════════════════════════════════════════╗');
-    console.log('║          EDISON INTERACTIVE DEVELOPMENT WORKFLOW           ║');
-    console.log('║     Architect → Developer → Reviewer → Approval → Code    ║');
-    console.log('╚════════════════════════════════════════════════════════════╝\n');
+    // Initialize output formatter
+    const outputFormatter = new WorkflowOutputFormatter();
+    outputFormatter.printWorkflowHeader();
 
     // Load configuration (use advanced mode for workflow)
     const config = loadConfig({
@@ -101,28 +100,27 @@ export async function developCommand(projectName: string, args: any): Promise<vo
     }
 
     // STEP 1: Architecture
-    console.log('┌─ STEP 1: ARCHITECTURE ─────────────────────────────────┐');
+    outputFormatter.printArchitecturePhase();
     const architecture = await workflow.startArchitecture(requirements);
 
     // Save architecture
     const archPath = path.resolve(args.output || 'architecture.json');
-    fs.writeFileSync(archPath, JSON.stringify(architecture, null, 2));
-    console.log(`✓ Architecture saved to ${archPath}`);
+    outputFormatter.saveToFile(archPath, architecture);
 
     // STEP 2: Task Execution with Developer ↔ Reviewer Feedback Loop
     console.log('\n┌─ STEP 2: TASK EXECUTION ───────────────────────────────┐');
     const tasks = workflow.getTasks();
     let allApproved = true;
 
-    for (const task of tasks) {
-      console.log(`\n[${task.priority}/${tasks.length}] ${task.componentName}`);
-      console.log('─'.repeat(60));
+    for (let i = 0; i < tasks.length; i++) {
+      const task = tasks[i];
+      outputFormatter.printTaskStart(task, i + 1, tasks.length);
 
       // Execute task with review loop (Developer → Reviewer → Approval)
       const completedTask = await workflow.executeTaskWithReviewLoop(task);
 
       if (completedTask.status === 'completed') {
-        console.log(`✓ Task completed and committed`);
+        console.log(`✓ Task completed`);
 
         // Save implementation code
         if (completedTask.implementation) {
@@ -130,56 +128,23 @@ export async function developCommand(projectName: string, args: any): Promise<vo
             args.output || '.',
             `${completedTask.componentName}.component.ts`
           );
-          fs.writeFileSync(codePath, completedTask.implementation.sourceCode);
-          console.log(`✓ Component code saved to ${codePath}`);
+          outputFormatter.saveToFile(codePath, completedTask.implementation.sourceCode);
         }
 
         // Show token usage for this task
-        console.log(`\nToken Usage for ${task.componentName}:`);
-        console.log(`  Architecture: ${completedTask.tokenUsage.architecture}`);
-        console.log(
-          `  Development: ${completedTask.tokenUsage.development.join(', ') || 'N/A'}`
-        );
-        console.log(`  Review: ${completedTask.tokenUsage.review.join(', ') || 'N/A'}`);
-        console.log(`  Total: ${completedTask.tokenUsage.total}`);
+        outputFormatter.printTaskComplete(task, true, completedTask.currentReview?.issues);
       } else {
         console.log(
           `✗ Task incomplete after ${completedTask.iterationCount} iterations`
         );
+        outputFormatter.printTaskComplete(task, false, completedTask.currentReview?.issues);
         allApproved = false;
       }
     }
 
     // STEP 3: Token Usage Summary
-    console.log('\n┌─ STEP 3: TOKEN USAGE SUMMARY ──────────────────────────┐');
     const metrics = workflow.getTokenMetrics();
-
-    console.log('\nTokens by Agent:');
-    console.log(`  Architect:  ${metrics.byAgent.architect.toLocaleString()} tokens`);
-    console.log(`  Developer:  ${metrics.byAgent.developer.toLocaleString()} tokens`);
-    console.log(`  Reviewer:   ${metrics.byAgent.reviewer.toLocaleString()} tokens`);
-    console.log(`  ───────────────────────────────`);
-    console.log(`  Total:      ${metrics.byPhase.total.toLocaleString()} tokens`);
-
-    console.log('\nTokens by Phase:');
-    console.log(`  Architecture: ${metrics.byPhase.architecture.toLocaleString()} tokens`);
-    console.log(`  Development:  ${metrics.byPhase.development.toLocaleString()} tokens`);
-    console.log(`  Review:       ${metrics.byPhase.review.toLocaleString()} tokens`);
-
-    console.log('\nEstimated Cost (USD):');
-    console.log(
-      `  Architect:  $${metrics.estimatedCost.architect.toFixed(4)}`
-    );
-    console.log(
-      `  Developer:  $${metrics.estimatedCost.developer.toFixed(4)}`
-    );
-    console.log(
-      `  Reviewer:   $${metrics.estimatedCost.reviewer.toFixed(4)}`
-    );
-    console.log(
-      `  ───────────────────────────────`
-    );
-    console.log(`  Total:      $${metrics.estimatedCost.total.toFixed(4)}`);
+    outputFormatter.printTokenSummary(metrics);
 
     // Save metrics to JSON
     const metricsLog = {
@@ -199,18 +164,15 @@ export async function developCommand(projectName: string, args: any): Promise<vo
     };
 
     const metricsPath = path.resolve(args.output || '.', 'metrics.json');
-    fs.writeFileSync(metricsPath, JSON.stringify(metricsLog, null, 2));
-    console.log(`\n✓ Metrics saved to ${metricsPath}`);
+    outputFormatter.saveToFile(metricsPath, metricsLog);
 
     // STEP 4: Generate Project Structure
-    console.log('\n┌─ STEP 4: PROJECT SUMMARY ──────────────────────────────┐');
     const projectStructure = workflow.generateProjectStructure();
-    console.log(projectStructure);
+    outputFormatter.printProjectStructure(projectStructure);
 
     if (args.output) {
       const structurePath = path.resolve(args.output, 'PROJECT_STRUCTURE.md');
-      fs.writeFileSync(structurePath, projectStructure);
-      console.log(`\n✓ Project structure saved to ${structurePath}`);
+      outputFormatter.saveToFile(structurePath, projectStructure);
     }
 
     // Save workflow history
@@ -249,30 +211,11 @@ export async function developCommand(projectName: string, args: any): Promise<vo
 
     if (args.output) {
       const historyPath = path.resolve(args.output, 'workflow-history.json');
-      fs.writeFileSync(historyPath, JSON.stringify(workflowHistory, null, 2));
-      console.log(`✓ Workflow history saved to ${historyPath}`);
+      outputFormatter.saveToFile(historyPath, workflowHistory);
     }
-
-    console.log(`\n✓ Workflow ${allApproved ? 'completed' : 'completed with partial results'}`);
 
     // Final status
-    console.log('\n╔════════════════════════════════════════════════════════════╗');
-    if (allApproved) {
-      console.log('║                   ✓ WORKFLOW COMPLETE                     ║');
-      console.log('║            All components approved and ready!             ║');
-    } else {
-      console.log('║                   ⚠ WORKFLOW COMPLETE                     ║');
-      console.log('║        Some components need further iteration             ║');
-    }
-    console.log('╚════════════════════════════════════════════════════════════╝\n');
-
-    // Save conversation history
-    if (args.verbose) {
-      const history = workflow.getConversationHistory();
-      const historyPath = path.resolve(args.output || '.', 'workflow-history.json');
-      fs.writeFileSync(historyPath, JSON.stringify(history, null, 2));
-      console.log(`Conversation history saved to ${historyPath}`);
-    }
+    outputFormatter.printWorkflowComplete(allApproved);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     throw new Error(`Develop command failed: ${message}`);
