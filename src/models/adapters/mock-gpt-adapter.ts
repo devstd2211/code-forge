@@ -46,6 +46,34 @@ export class MockGPTAdapter extends BaseModel {
     if (role === 'developer' && (task === 'develop' || task === 'analyze')) {
       const iterCount = this.iterationCountPerComponent.get(componentName) || 0;
 
+      // Service component: return clean code immediately (no errors)
+      if (componentName === 'Service') {
+        return {
+          modelName: this.name,
+          role,
+          timestamp,
+          summary: `Implementation of ${componentName}\n\nGenerated Go code with clean separation of concerns.\nService layer implemented correctly.`,
+          findings: [],
+          overallAssessment: 'pass',
+          confidence: 0.95,
+          findingCoverage: {
+            architecture: 0,
+            logic: 0,
+            performance: 0,
+            security: 0,
+            testCoverage: 0
+          },
+          metadata: {
+            tokensUsed: { input: 280, output: 420, total: 500 },
+            executionTimeMs: 150,
+            costEstimate: 0.0105,
+            iterationCount: 1,
+            toolCalls: []
+          }
+        };
+      }
+
+      // Core component: first iteration has bug, second iteration is fixed
       if (iterCount === 0) {
         // First iteration: return code with intentional error (division by zero)
         this.iterationCountPerComponent.set(componentName, iterCount + 1);

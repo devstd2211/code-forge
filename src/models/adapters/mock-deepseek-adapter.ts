@@ -47,6 +47,44 @@ export class MockDeepSeekAdapter extends BaseModel {
     if (role === 'reviewer' && (task === 'review' || task === 'analyze')) {
       const reviewCount = this.reviewCountPerComponent.get(componentName) || 0;
 
+      // Service component: always approve (no errors)
+      if (componentName === 'Service') {
+        return {
+          modelName: this.name,
+          role,
+          timestamp,
+          summary: `Code Review - ${componentName} - APPROVED\n\nCode quality looks good. All best practices followed.`,
+          findings: [
+            {
+              id: uuidv4(),
+              severity: 'low',
+              type: 'architecture',
+              description: 'Good separation of concerns',
+              location: `${componentName}.go`,
+              suggestion: 'Keep this pattern in future components',
+              confidence: 0.9
+            }
+          ],
+          overallAssessment: 'pass',
+          confidence: 0.95,
+          findingCoverage: {
+            architecture: 100,
+            logic: 100,
+            performance: 100,
+            security: 100,
+            testCoverage: 100
+          },
+          metadata: {
+            tokensUsed: { input: 400, output: 300, total: 700 },
+            executionTimeMs: 120,
+            costEstimate: 0.007,
+            iterationCount: 1,
+            toolCalls: []
+          }
+        };
+      }
+
+      // Core component: first review has error, second approves
       if (reviewCount === 0) {
         // First review: return critical error (to trigger iteration)
         this.reviewCountPerComponent.set(componentName, reviewCount + 1);

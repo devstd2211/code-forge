@@ -1,27 +1,27 @@
 {
-  "timestamp": "2026-01-15T21:36:33.295Z",
+  "timestamp": "2026-01-15T21:40:51.580Z",
   "projectName": "hello-world-go",
-  "totalTokens": 5700,
+  "totalTokens": 4150,
   "byAgent": {
     "architect": 200,
-    "developer": 2000,
-    "reviewer": 3500
+    "developer": 1500,
+    "reviewer": 2450
   },
   "byPhase": {
     "architecture": 200,
-    "development": 2000,
-    "review": 3500,
-    "total": 5700
+    "development": 1500,
+    "review": 2450,
+    "total": 4150
   },
   "estimatedCost": {
     "architect": 0.0018,
-    "developer": 0.04,
-    "reviewer": 0.0035,
-    "total": 0.04530000000000001
+    "developer": 0.03,
+    "reviewer": 0.0024500000000000004,
+    "total": 0.03425
   },
   "tasks": [
     {
-      "id": "6f523599-facf-4d48-9f11-a6a1e2770638",
+      "id": "643793b5-6c3c-4c4f-82bb-67dc4ca1984b",
       "name": "Core",
       "status": "completed",
       "iterations": 2,
@@ -39,21 +39,19 @@
       }
     },
     {
-      "id": "44b218c2-cb74-4945-a1de-afad3eb72a4d",
+      "id": "0866ce37-a8b7-4176-ba9c-561df401d551",
       "name": "Service",
       "status": "completed",
-      "iterations": 2,
+      "iterations": 1,
       "tokenUsage": {
         "architecture": 0,
         "development": [
-          500,
           500
         ],
         "review": [
-          950,
-          800
+          700
         ],
-        "total": 2750
+        "total": 1200
       }
     }
   ]
